@@ -1,0 +1,1813 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黑膠猜歌遊戲</title>
+<style>
+  :root{
+    --bg1:#1a1030;
+    --bg2:#0d0818;
+    --accent:#ff5fa2;
+    --accent2:#5fd0ff;
+    --gold:#ffcf5c;
+    --green:#4ade80;
+    --red:#f87171;
+    --card:#231a3d;
+    --text:#f4f1fb;
+    --muted:#a89dc4;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    min-height:100vh;
+    font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
+    background:radial-gradient(circle at 20% 10%, #341b52 0%, var(--bg1) 40%, var(--bg2) 100%);
+    color:var(--text);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .app{
+    width:100%;
+    max-width:640px;
+  }
+  h1{
+    text-align:center;
+    font-size:clamp(24px,5vw,34px);
+    margin:0 0 6px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .subtitle{
+    text-align:center;
+    color:var(--muted);
+    margin:0 0 28px;
+    font-size:14px;
+  }
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  /* ---------- 開始畫面 ---------- */
+  .diff-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  .diff-card{
+    background:var(--card);
+    border:2px solid transparent;
+    border-radius:16px;
+    padding:18px 16px;
+    text-align:left;
+    cursor:pointer;
+    color:var(--text);
+    transition:transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    font-family:inherit;
+  }
+  .diff-card:hover{ transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  .diff-card:active{ transform:translateY(0); }
+  .diff-card .name{ font-size:20px; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px;}
+  .diff-card .meta{ font-size:13px; color:var(--muted); line-height:1.6; }
+  .diff-easy{ border-color:#4ade8055; } .diff-easy:hover{ border-color:var(--green); }
+  .diff-hard{ border-color:#ffcf5c55; } .diff-hard:hover{ border-color:var(--gold); }
+  .diff-boss{ border-color:#f8717155; } .diff-boss:hover{ border-color:var(--red); }
+  .diff-random{ border-color:#5fd0ff55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
+  .badge{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); }
+
+  /* ---------- 遊戲畫面 ---------- */
+  .hud{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:16px;
+    font-size:14px;
+    color:var(--muted);
+  }
+  .hud .pill{
+    background:var(--card);
+    padding:6px 14px;
+    border-radius:999px;
+  }
+  .mp-chip{
+    background:var(--card);
+    padding:5px 12px;
+    border-radius:999px;
+    font-size:12px;
+    color:var(--muted);
+    border:1px solid transparent;
+  }
+  .mp-chip.me{
+    color:var(--text);
+    border-color:var(--accent2);
+    font-weight:700;
+  }
+  .mp-chip.winner{
+    border-color:var(--green);
+  }
+  .stage-wrap{
+    display:flex;
+    justify-content:center;
+    margin-bottom:8px;
+  }
+  .record-stage{
+    position:relative;
+    width:280px;
+    height:280px;
+    max-width:80vw;
+    max-height:80vw;
+    border-radius:50%;
+    overflow:hidden;
+    background:#000;
+    box-shadow:0 0 0 6px #120a22, 0 20px 40px rgba(0,0,0,.5);
+  }
+  .video-crop{
+    position:absolute;
+    inset:0;
+    overflow:hidden;
+    border-radius:50%;
+  }
+  .video-crop iframe{
+    position:absolute;
+    top:50%; left:50%;
+    width:280px; height:498px;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  .cover-img{
+    position:absolute;
+    inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    opacity:0;
+    z-index:2;
+  }
+  /* 揭曉時改成顯示真正的影片（歌詞版影片才看得到歌詞），不再蓋一張靜態封面圖 */
+  .record-stage.revealed .cover-img{ opacity:0; }
+
+  .reveal-caption{
+    position:absolute;
+    left:0; right:0; bottom:0;
+    padding:14px 10px 10px;
+    text-align:center;
+    background:linear-gradient(to top, rgba(0,0,0,.85), transparent);
+    opacity:0;
+    transition:opacity .4s ease .3s;
+    z-index:6;
+  }
+  .reveal-caption .t{ font-weight:700; font-size:16px; }
+  .reveal-caption .a{ font-size:13px; color:var(--muted); }
+  .record-stage.revealed .reveal-caption{ opacity:1; }
+
+  .vinyl{
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    background:
+      repeating-radial-gradient(circle at 50% 50%,
+        #161018 0px, #161018 3px,
+        #201829 3px, #201829 6px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:transform .7s cubic-bezier(.55,0,.1,1), opacity .7s ease;
+    z-index:5;
+  }
+  .vinyl::before{
+    content:"";
+    position:absolute; inset:10px;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,.04);
+    box-shadow:0 0 0 30px rgba(255,255,255,.02) inset;
+  }
+  .vinyl.spinning{ animation:spin 2.6s linear infinite; }
+  @keyframes spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+  .vinyl.opened{
+    transform:translateY(-135%) rotate(-35deg) scale(.9);
+    opacity:0;
+    pointer-events:none;
+  }
+  .label{
+    width:96px; height:96px;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, var(--accent), #8a1655 75%);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 0 0 3px #0d0818, 0 4px 14px rgba(0,0,0,.5);
+  }
+  .play-btn{
+    width:64px; height:64px;
+    border-radius:50%;
+    background:rgba(255,255,255,.92);
+    color:#231a3d;
+    font-size:26px;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    user-select:none;
+  }
+  .play-hint{
+    text-align:center;
+    color:var(--muted);
+    font-size:12px;
+    margin:10px 0 20px;
+    min-height:16px;
+  }
+  .clip-bar{
+    width:200px;
+    height:5px;
+    border-radius:999px;
+    background:rgba(255,255,255,.1);
+    margin:8px auto 0;
+    overflow:hidden;
+  }
+  .clip-bar-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg,var(--accent2),var(--accent));
+  }
+  .clip-bar-fill.animating{ transition:width linear; }
+
+  .choices{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .choice-btn{
+    background:var(--card);
+    border:2px solid transparent;
+    color:var(--text);
+    padding:14px 12px;
+    border-radius:12px;
+    font-size:15px;
+    cursor:pointer;
+    text-align:center;
+    font-family:inherit;
+    transition:border-color .15s ease, transform .1s ease;
+  }
+  .choice-btn:hover:not(:disabled){ border-color:var(--accent2); transform:translateY(-2px); }
+  .choice-btn:disabled{ cursor:default; }
+  .choice-btn.correct{ border-color:var(--green); background:#1f3a2c; }
+  .choice-btn.wrong{ border-color:var(--red); background:#3a1f24; }
+
+  .next-wrap{ text-align:center; margin-top:20px; }
+  .btn-main{
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    border:none;
+    color:#1a1030;
+    font-weight:700;
+    padding:12px 28px;
+    border-radius:999px;
+    font-size:15px;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .btn-ghost{
+    background:transparent;
+    border:1px solid var(--muted);
+    color:var(--text);
+    padding:11px 24px;
+    border-radius:999px;
+    font-size:14px;
+    cursor:pointer;
+    font-family:inherit;
+    margin-left:10px;
+  }
+
+  /* ---------- 結果畫面 ---------- */
+  .score-big{
+    text-align:center;
+    font-size:44px;
+    font-weight:800;
+    background:linear-gradient(90deg,var(--gold),var(--accent));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    margin:6px 0 4px;
+  }
+  .score-sub{ text-align:center; color:var(--muted); margin-bottom:20px; font-size:14px;}
+  .result-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:24px; }
+  .result-row{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--card); border-radius:10px; padding:10px 14px; font-size:13px;
+  }
+  .result-row .rt{ font-weight:600; }
+  .result-row .ra{ color:var(--muted); font-size:12px; }
+  .result-row .mark{ font-size:16px; }
+  .result-row.wrong .mark{ color:var(--red); }
+  .result-row.correct .mark{ color:var(--green); }
+  .actions-center{ text-align:center; }
+
+  #yt-player-holder{ position:absolute; width:0; height:0; overflow:hidden; }
+
+  /* ---------- 房間聊天室 ---------- */
+  #mp-chat{ position:fixed; right:16px; bottom:16px; z-index:50; display:none; }
+  #mp-chat-toggle{
+    position:relative;
+    border:none; border-radius:999px; padding:12px 18px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#1a1030; font-weight:700; font-size:14px; cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,0,0,0.35);
+  }
+  #mp-chat-badge{
+    position:absolute; top:-6px; right:-6px;
+    background:var(--red); color:#fff; font-size:11px; font-weight:700;
+    min-width:18px; height:18px; border-radius:999px;
+    display:flex; align-items:center; justify-content:center; padding:0 4px;
+  }
+  #mp-chat-panel{
+    display:none;
+    position:absolute; right:0; bottom:56px;
+    width:min(300px, calc(100vw - 32px)); height:360px;
+    background:var(--card); border:1px solid rgba(255,255,255,0.08);
+    border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.45);
+    flex-direction:column; overflow:hidden;
+  }
+  #mp-chat-panel.open{ display:flex; }
+  #mp-chat-messages{
+    flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px;
+  }
+  .mp-chat-msg{ max-width:85%; }
+  .mp-chat-msg .who{ font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .mp-chat-msg .bubble{
+    background:rgba(255,255,255,0.06); color:var(--text);
+    padding:6px 10px; border-radius:10px; font-size:13px; word-break:break-word;
+  }
+  .mp-chat-msg.me{ align-self:flex-end; }
+  .mp-chat-msg.me .who{ text-align:right; }
+  .mp-chat-msg.me .bubble{ background:var(--accent); color:#1a1030; }
+  .mp-chat-msg.system{ align-self:center; }
+  .mp-chat-msg.system .bubble{ background:transparent; color:var(--muted); font-size:12px; padding:2px; }
+  #mp-chat-form{
+    display:flex; gap:6px; padding:10px; border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #mp-chat-input{
+    flex:1; min-width:0; padding:9px 12px; border-radius:999px;
+    border:1px solid var(--muted); background:var(--bg2); color:var(--text); font-size:13px;
+  }
+  #mp-chat-send{
+    border:none; border-radius:999px; padding:9px 14px;
+    background:var(--accent2); color:#0d0818; font-weight:700; font-size:13px; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🎵 黑膠猜歌 🎵</h1>
+  <div id="api-warning" style="display:none; background:#4a1f24; border:1px solid var(--red); color:#ffd9d9; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:16px; text-align:center;">
+    ⚠️ 無法連上 YouTube 播放服務。請確認裝置有網路連線、關閉廣告攔截 / 隱私外掛（可能封鎖 youtube.com），再重新整理頁面。
+  </div>
+
+  <!-- 年代篩選畫面 -->
+  <section id="screen-era" class="screen active">
+    <p style="text-align:center; color:var(--muted); margin:0 0 18px;">先選一個歌曲年代範圍</p>
+    <div class="diff-grid">
+      <button class="diff-card diff-easy" data-era="pre90">
+        <div class="name">🕰️ 懷舊金曲</div>
+        <div class="meta">70~90 年代老歌<br>鄧麗君、羅大佑、張學友…</div>
+      </button>
+      <button class="diff-card diff-hard" data-era="post90">
+        <div class="name">🎧 千禧新聲</div>
+        <div class="meta">2000 年代以後<br>周杰倫、五月天、鄧紫棋…</div>
+      </button>
+      <button class="diff-card diff-random" data-era="mixed">
+        <div class="name">🎲 大亂鬥 <span class="badge">不限年代</span></div>
+        <div class="meta">70 年代到現在通通有機會出現</div>
+      </button>
+    </div>
+  </section>
+
+  <!-- 難度選擇畫面 -->
+  <section id="screen-start" class="screen">
+    <p style="text-align:center; color:var(--muted); margin:0 0 14px; font-size:13px;">
+      目前年代：<span id="era-label">-</span>
+      <button class="btn-ghost" id="change-era-btn" style="margin-left:4px; padding:3px 12px; font-size:12px;">🔄 換年代</button>
+    </p>
+    <div class="diff-grid">
+      <button class="diff-card diff-easy" data-diff="easy">
+        <div class="name">🟢 簡單</div>
+        <div class="meta">4 題・每段 10 秒<br>入門好上手</div>
+      </button>
+      <button class="diff-card diff-hard" data-diff="hard">
+        <div class="name">🟡 困難</div>
+        <div class="meta">6 題・每段 8 秒<br>片段變短，題目變多</div>
+      </button>
+      <button class="diff-card diff-boss" data-diff="boss">
+        <div class="name">🔴 魔王</div>
+        <div class="meta">8 題・每段 5 秒<br>耳力大考驗</div>
+      </button>
+      <button class="diff-card diff-random" data-diff="random">
+        <div class="name">🔀 隨機 <span class="badge">混合三種難度</span></div>
+        <div class="meta">4~8 題隨機・每題難度也隨機（簡單/困難/魔王混戰）</div>
+      </button>
+    </div>
+    <div style="text-align:center; margin-top:18px;">
+      <button class="btn-main" id="go-mp-btn">🔗 連線對戰</button>
+    </div>
+  </section>
+
+  <!-- 連線對戰：建立/加入房間 -->
+  <section id="screen-mp-menu" class="screen">
+    <p style="text-align:center; color:var(--muted); margin:0 0 14px;">建立一個房間邀朋友加入，或輸入朋友給你的房號（最多 8 人）</p>
+    <div class="actions-center" style="margin-bottom:10px;">
+      <input id="mp-name" maxlength="10" placeholder="你的名字（可留空）"
+        style="width:220px; padding:11px 14px; border-radius:999px; border:1px solid var(--muted); background:var(--card); color:var(--text); font-size:15px; text-align:center;">
+    </div>
+    <div class="actions-center" style="margin-bottom:24px;">
+      <button class="btn-main" id="mp-create-btn">➕ 建立房間</button>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap;">
+      <input id="mp-join-code" maxlength="4" inputmode="numeric" placeholder="輸入 4 位房號"
+        style="width:150px; padding:11px 14px; border-radius:999px; border:1px solid var(--muted); background:var(--card); color:var(--text); font-size:15px; text-align:center; letter-spacing:2px;">
+      <button class="btn-main" id="mp-join-btn">加入房間</button>
+    </div>
+    <p id="mp-join-error" style="text-align:center; color:var(--red); font-size:13px; min-height:18px; margin-top:8px;"></p>
+    <div style="text-align:center; margin-top:6px;">
+      <button class="btn-ghost" id="mp-menu-back-btn" style="margin-left:0;">← 返回</button>
+    </div>
+  </section>
+
+  <!-- 連線對戰：等待房間 -->
+  <section id="screen-mp-lobby" class="screen">
+    <p style="text-align:center; color:var(--muted); margin:0 0 6px;">房號</p>
+    <div class="score-big" id="mp-lobby-code">----</div>
+    <p style="text-align:center; color:var(--muted); font-size:13px; margin:6px 0 20px;" id="mp-lobby-share">
+      請朋友在同一個 Wi-Fi 下打開：<br>
+      <span id="mp-lobby-url" style="color:var(--accent2);">-</span><br>
+      再輸入這個房號加入
+    </p>
+    <p style="text-align:center;" id="mp-lobby-status">⏳ 等待對方加入…</p>
+    <div id="mp-lobby-players" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:12px 0;"></div>
+
+    <div id="mp-lobby-diffpick" class="diff-grid" style="display:none; margin-top:16px;">
+      <button class="diff-card diff-easy" data-mpstartdiff="easy">
+        <div class="name">🟢 簡單</div><div class="meta">4 題・每段 10 秒</div>
+      </button>
+      <button class="diff-card diff-hard" data-mpstartdiff="hard">
+        <div class="name">🟡 困難</div><div class="meta">6 題・每段 8 秒</div>
+      </button>
+      <button class="diff-card diff-boss" data-mpstartdiff="boss">
+        <div class="name">🔴 魔王</div><div class="meta">8 題・每段 5 秒</div>
+      </button>
+      <button class="diff-card diff-random" data-mpstartdiff="random">
+        <div class="name">🔀 隨機</div><div class="meta">4~8 題・難度隨機</div>
+      </button>
+    </div>
+
+    <div class="actions-center">
+      <button class="btn-ghost" id="mp-lobby-leave-btn">離開房間</button>
+    </div>
+  </section>
+
+  <!-- 連線對戰：結算 -->
+  <section id="screen-mp-result" class="screen">
+    <div class="score-big" id="mp-result-title">-</div>
+    <p class="score-sub" id="mp-result-sub">-</p>
+    <div class="result-list" id="mp-result-list" style="max-width:320px; margin:0 auto 20px;"></div>
+    <div class="actions-center">
+      <button class="btn-main" id="mp-result-lobby-btn">回到房間</button>
+    </div>
+  </section>
+
+  <!-- 遊戲進行畫面（單人 / 連線共用） -->
+  <section id="screen-game" class="screen">
+    <div class="hud">
+      <span class="pill" id="hud-progress">第 1 / 4 題</span>
+      <span class="pill" id="hud-diff">簡單</span>
+      <span class="pill" id="hud-score">分數 0</span>
+    </div>
+    <div id="mp-scoreboard-row" style="display:none; flex-wrap:wrap; gap:6px; justify-content:center; margin:-6px 0 16px;"></div>
+
+    <div class="stage-wrap">
+      <div class="record-stage" id="record-stage">
+        <div class="video-crop"><div id="yt-player"></div></div>
+        <img class="cover-img" id="cover-img" alt="">
+        <div class="vinyl" id="vinyl">
+          <div class="label">
+            <div class="play-btn" id="play-btn"></div>
+          </div>
+        </div>
+        <div class="reveal-caption">
+          <div class="t" id="reveal-title">-</div>
+          <div class="a" id="reveal-artist">-</div>
+        </div>
+      </div>
+    </div>
+    <div id="playback-status">
+      <p class="play-hint" id="play-hint">準備中…</p>
+      <div class="clip-bar"><div class="clip-bar-fill" id="clip-bar-fill"></div></div>
+      <div style="text-align:center; margin-top:10px;">
+        <button class="btn-ghost" id="skip-btn" style="margin-left:0; padding:6px 16px; font-size:12px;">聽不到聲音？跳過看答案 →</button>
+      </div>
+    </div>
+
+    <div style="height:22px;"></div>
+
+    <div class="choices" id="choices"></div>
+
+    <div class="next-wrap" id="next-wrap" style="display:none;">
+      <button class="btn-main" id="next-btn">下一題 →</button>
+    </div>
+  </section>
+
+  <!-- 結果畫面 -->
+  <section id="screen-result" class="screen">
+    <div class="score-big" id="result-score">0 / 0</div>
+    <p class="score-sub" id="result-sub">答對率</p>
+    <div class="result-list" id="result-list"></div>
+    <div class="actions-center">
+      <button class="btn-main" id="retry-btn">再玩一次</button>
+      <button class="btn-ghost" id="menu-btn">回選單</button>
+    </div>
+  </section>
+</div>
+
+<!-- 房間聊天室（連線對戰時才顯示） -->
+<div id="mp-chat">
+  <div id="mp-chat-panel">
+    <div id="mp-chat-messages"></div>
+    <form id="mp-chat-form">
+      <input id="mp-chat-input" maxlength="80" placeholder="輸入訊息…" autocomplete="off">
+      <button type="submit" id="mp-chat-send">送出</button>
+    </form>
+  </div>
+  <button id="mp-chat-toggle">💬 聊天<span id="mp-chat-badge" style="display:none;">0</span></button>
+</div>
+
+<script>
+/* ===================== 歌曲資料庫 =====================
+   videoId 皆為官方 MV，start 為副歌/記憶點大約開始秒數（可自行微調）。
+======================================================= */
+const SONGS = [
+  // --- 簡單：全民都聽過的洗腦神曲 ---
+  { id:1,  title:"告白氣球",         artist:"周杰倫", videoId:"bu7nU9Mhpyo", start:50, tier:"easy", era:"post90" },
+  { id:2,  title:"小幸運",           artist:"田馥甄", videoId:"_sQSXwdtxlY", start:55, tier:"easy", era:"post90" },
+  { id:3,  title:"倔強",             artist:"五月天", videoId:"R2s-H_crYkc", start:8,  tier:"easy", era:"post90" },
+  { id:4,  title:"夜曲",             artist:"周杰倫", videoId:"6Q0Pd53mojY", start:10, tier:"easy", era:"post90" },
+  { id:19, title:"稻香",             artist:"周杰倫", videoId:"tffsErz0I2s", start:55, tier:"easy", era:"post90" },
+  { id:20, title:"突然好想你",       artist:"五月天", videoId:"GtDRcXtDg-4", start:50, tier:"easy", era:"post90" },
+  { id:21, title:"Super Star",       artist:"S.H.E",  videoId:"gr5fNKK2FaA", start:45, tier:"easy", era:"post90" },
+  { id:22, title:"你，好不好？",     artist:"周興哲", videoId:"wSBXfzgqHtE", start:55, tier:"easy", era:"post90" },
+  { id:31, title:"七里香",           artist:"周杰倫", videoId:"Bbp9ZaJD_eA", start:50, tier:"easy", era:"post90" },
+  { id:32, title:"晴天",             artist:"周杰倫", videoId:"DYptgVvkVLQ", start:50, tier:"easy", era:"post90" },
+  { id:33, title:"頑固",             artist:"五月天", videoId:"Z6lvb9-5DGg", start:50, tier:"easy", era:"post90" },
+  { id:34, title:"玫瑰少年",         artist:"蔡依林", videoId:"feOq6MWeUXA", start:45, tier:"easy", era:"post90" },
+  { id:35, title:"渺小",             artist:"田馥甄", videoId:"BClZoVLwZCE", start:50, tier:"easy", era:"post90" },
+  { id:36, title:"可惜沒如果",       artist:"林俊傑", videoId:"vsBf_0gDxSM", start:50, tier:"easy", era:"post90" },
+  { id:45, title:"你的酒館對我打了烊", artist:"陳雪凝", videoId:"b35Vwj0aFxY", start:50, tier:"easy", era:"post90" },
+  { id:52, title:"終究還是因為愛",   artist:"TRASH",  videoId:"fl1Wbd-ldMQ", start:50, tier:"easy", era:"post90" },
+  { id:53, title:"雙截棍",           artist:"周杰倫", videoId:"OR-0wptI_u0", start:50, tier:"easy", era:"post90" },
+  { id:79, title:"天黑黑",           artist:"孫燕姿", videoId:"zi8z6RPYGV0", start:50, tier:"easy", era:"post90" },
+  { id:87, title:"遇見",             artist:"孫燕姿", videoId:"m4nu_F_9dWU", start:50, tier:"easy", era:"post90" },
+  { id:88, title:"第一天",           artist:"孫燕姿", videoId:"y3lP_gPjlUo", start:50, tier:"easy", era:"post90" },
+  { id:89, title:"單身情歌",         artist:"林志炫", videoId:"QOPTkoK0MXI", start:50, tier:"easy", era:"post90" },
+  { id:93, title:"春泥",             artist:"庾澄慶", videoId:"xAh377i2Rmg", start:50, tier:"easy", era:"post90" },
+  { id:94, title:"知否知否",         artist:"胡夏、郁可唯", videoId:"xoH29SM3e8I", start:50, tier:"easy", era:"post90" },
+  { id:99, title:"曲終人散",         artist:"張宇",   videoId:"5LLrrhEZAjE", start:50, tier:"easy", era:"post90" },
+  { id:100, title:"情書（第七封信）", artist:"范逸臣", videoId:"U4H3tIOQhYo", start:50, tier:"easy", era:"post90" },
+  { id:105, title:"写故事的人",      artist:"汪蘇瀧", videoId:"iiCXMRZS3_M", start:50, tier:"easy", era:"post90" },
+  { id:106, title:"Lydia",           artist:"飛兒樂團", videoId:"ZOHsd6Zk7DM", start:50, tier:"easy", era:"post90" },
+  { id:107, title:"我們的愛",        artist:"飛兒樂團", videoId:"88D2-J_pk7A", start:50, tier:"easy", era:"post90" },
+  { id:110, title:"彩虹（五月天）",  artist:"五月天", videoId:"7WQFI_wiEIk", start:50, tier:"easy", era:"post90" },
+  { id:111, title:"如煙",            artist:"五月天", videoId:"Qd9YGu3FWgc", start:50, tier:"easy", era:"post90" },
+  { id:112, title:"DNA",             artist:"五月天", videoId:"YTTZoywkAAU", start:50, tier:"easy", era:"post90" },
+  { id:116, title:"好不好",          artist:"五月天", videoId:"LtunmrE1i5I", start:50, tier:"easy", era:"post90" },
+  { id:117, title:"如果我們不曾相遇", artist:"五月天", videoId:"eZMH6Mo0f9A", start:50, tier:"easy", era:"post90" },
+  { id:118, title:"後來的我們",      artist:"五月天", videoId:"pd3eV-SG23E", start:50, tier:"easy", era:"post90" },
+  { id:101, title:"閣愛妳一擺",      artist:"茄子蛋", videoId:"PJJhHihvDpo", start:50, tier:"easy", era:"post90" },
+  { id:80, title:"紅豆",             artist:"王菲",   videoId:"oIkG2iX0TTI", start:50, tier:"easy", era:"post90" },
+  { id:81, title:"K歌之王",          artist:"陳奕迅", videoId:"Sm_DVsixxsk", start:50, tier:"easy", era:"post90" },
+  { id:82, title:"愛情轉移",         artist:"陳奕迅", videoId:"sR-Oyg2YSqo", start:50, tier:"easy", era:"post90" },
+  { id:54, title:"為你寫詩",         artist:"吳克群", videoId:"ayWNab6dQaY", start:50, tier:"easy", era:"post90" },
+  { id:55, title:"我想要佔據你",     artist:"告五人", videoId:"IT35gZlLYXQ", start:50, tier:"easy", era:"post90" },
+  { id:56, title:"淋雨一直走",       artist:"張韶涵", videoId:"WTcodZDH-Oc", start:50, tier:"easy", era:"post90" },
+  { id:57, title:"不得不愛",         artist:"潘瑋柏、弦子", videoId:"wuwbok3wlGE", start:50, tier:"easy", era:"post90" },
+  { id:75, title:"想和你看五月的晚霞", artist:"陳華", videoId:"ljd9ISixsWo", start:50, tier:"easy", era:"post90" },
+  { id:58, title:"我難過",           artist:"5566",   videoId:"9pIuSc_a45U", start:50, tier:"easy", era:"post90" },
+
+  // --- 困難：熱門但沒那麼萬用皆知 ---
+  { id:5,  title:"日不落",           artist:"蔡依林", videoId:"1GA8z-Wliew", start:48, tier:"hard", era:"post90" },
+  { id:6,  title:"好久不見",         artist:"陳奕迅", videoId:"UsFQ9kbpQhw", start:52, tier:"hard", era:"post90" },
+  { id:7,  title:"江南",             artist:"林俊傑", videoId:"G97_rOdHcnY", start:58, tier:"hard", era:"post90" },
+  { id:8,  title:"曖昧",             artist:"楊丞琳", videoId:"mebzXfWi87E", start:45, tier:"hard", era:"post90" },
+  { id:9,  title:"愛你",             artist:"王心凌", videoId:"NAODcPQcy9U", start:12, tier:"hard", era:"post90" },
+  { id:10, title:"崇拜",             artist:"梁靜茹", videoId:"-4SO5Mfu8mE", start:50, tier:"hard", era:"post90" },
+  { id:23, title:"旅行的意義",       artist:"陳綺貞", videoId:"tv95k0zqnaA", start:55, tier:"hard", era:"post90" },
+  { id:24, title:"聽海",             artist:"張惠妹", videoId:"mLk61pfiHQ0", start:55, tier:"hard", era:"post90" },
+  { id:25, title:"可惜不是你",       artist:"梁靜茹", videoId:"k_l7FVsqUyM", start:50, tier:"hard", era:"post90" },
+  { id:26, title:"王妃",             artist:"蕭敬騰", videoId:"qnDlH_S4Fak", start:50, tier:"hard", era:"post90" },
+  { id:37, title:"諾亞方舟",         artist:"五月天", videoId:"V46K7apDziA", start:55, tier:"hard", era:"post90" },
+  { id:38, title:"給我一個理由忘記", artist:"A-Lin",  videoId:"F5FlN-NBGo8", start:50, tier:"hard", era:"post90" },
+  { id:39, title:"尋人啟事",         artist:"徐佳瑩", videoId:"TPzyzi-Jydc", start:50, tier:"hard", era:"post90" },
+  { id:40, title:"明年今日",         artist:"陳奕迅", videoId:"8NJVNkzhJM4", start:50, tier:"hard", era:"post90" },
+  { id:46, title:"白月光與朱砂痣",   artist:"大籽",   videoId:"h6SEEvwTnRc", start:50, tier:"hard", era:"post90" },
+  { id:47, title:"我的秘密",         artist:"鄧紫棋", videoId:"8XcmT8-ZByA", start:50, tier:"hard", era:"post90" },
+  { id:48, title:"飛鳥和蟬",         artist:"任然",   videoId:"Sdh16YlinNE", start:50, tier:"hard", era:"post90" },
+  { id:51, title:"我會等",           artist:"承桓",   videoId:"-eGMo7S6yMI", start:50, tier:"hard", era:"post90" },
+  { id:59, title:"我們青春",         artist:"李玉璽", videoId:"TK7XIgszMNE", start:50, tier:"hard", era:"post90" },
+  { id:60, title:"女孩",             artist:"韋禮安", videoId:"ZPALMaXLfIw", start:50, tier:"hard", era:"post90" },
+  { id:61, title:"COLORFUL",         artist:"婁峻碩", videoId:"c4_qKyFuL0Y", start:50, tier:"hard", era:"post90" },
+  { id:62, title:"我們都擁有海洋",   artist:"吳青峰", videoId:"CkU7t1fGq4U", start:50, tier:"hard", era:"post90" },
+  { id:63, title:"曹操",             artist:"林俊傑", videoId:"3J_bkgexrE8", start:50, tier:"hard", era:"post90" },
+  { id:64, title:"勢在必行",         artist:"陳勢安、畢書盡", videoId:"BhHdmugCPjo", start:50, tier:"hard", era:"post90" },
+  { id:65, title:"因為是你",         artist:"韋禮安", videoId:"1a7V8zwbD8o", start:50, tier:"hard", era:"post90" },
+  { id:66, title:"當我們一起走過",   artist:"蘇打綠", videoId:"tAWPPcPaiQo", start:50, tier:"hard", era:"post90" },
+  { id:67, title:"帥到分手",         artist:"周湯豪", videoId:"29tEEaTN_Sc", start:50, tier:"hard", era:"post90" },
+  { id:76, title:"11",               artist:"隊長、黃禮格", videoId:"7K2vDJP3EhM", start:50, tier:"hard", era:"post90" },
+  { id:83, title:"痴心絕對",         artist:"李聖傑", videoId:"7NIsBeVRAgk", start:50, tier:"hard", era:"post90" },
+  { id:90, title:"失落沙洲",         artist:"徐佳瑩", videoId:"Ie1KcGvBN_k", start:50, tier:"hard", era:"post90" },
+  { id:91, title:"過火",             artist:"張信哲", videoId:"SrD36rogSjc", start:50, tier:"hard", era:"post90" },
+  { id:95, title:"永不失聯的愛",     artist:"周興哲", videoId:"WJK8486VjfU", start:50, tier:"hard", era:"post90" },
+  { id:96, title:"以後別做朋友",     artist:"周興哲", videoId:"Ew4VvF0DPMc", start:50, tier:"hard", era:"post90" },
+  { id:97, title:"離開你以後",       artist:"周興哲", videoId:"37uw4W2MwgU", start:50, tier:"hard", era:"post90" },
+  { id:98, title:"慢冷",             artist:"梁靜茹", videoId:"TpF0wNlopp8", start:50, tier:"hard", era:"post90" },
+  { id:102, title:"離開我的依賴",    artist:"王艷薇", videoId:"p13tH7Etlzc", start:50, tier:"hard", era:"post90" },
+  { id:108, title:"生死相隨",        artist:"崔子格、楊培安", videoId:"GKhZDLWCYio", start:50, tier:"hard", era:"post90" },
+  { id:109, title:"劍魂",            artist:"李煒",   videoId:"gHXiR8YlYmA", start:50, tier:"hard", era:"post90" },
+  { id:113, title:"笑忘歌",          artist:"五月天", videoId:"f6qn6C_sU-4", start:50, tier:"hard", era:"post90" },
+  { id:114, title:"第二人生",        artist:"五月天", videoId:"amv7CzCmHU0", start:50, tier:"hard", era:"post90" },
+  { id:115, title:"牙關",            artist:"五月天", videoId:"aE-HNzT9I6Q", start:50, tier:"hard", era:"post90" },
+  { id:119, title:"倉頡",            artist:"五月天", videoId:"hiKYufVEUtI", start:50, tier:"hard", era:"post90" },
+  { id:120, title:"好好（想把你寫成一首歌）", artist:"五月天", videoId:"HxIct0i-CcA", start:50, tier:"hard", era:"post90" },
+  { id:121, title:"因為你 所以我",   artist:"五月天", videoId:"_s8Iot-uo7s", start:50, tier:"hard", era:"post90" },
+  { id:103, title:"甲乙丙丁",        artist:"李佳薇", videoId:"zsaCII-BtSY", start:50, tier:"hard", era:"post90" },
+  { id:104, title:"天若有情",        artist:"A-Lin",  videoId:"R5E_Am4kNII", start:50, tier:"hard", era:"post90" },
+  { id:92, title:"愛如潮水",         artist:"張信哲", videoId:"lt2ZK19_Utw", start:50, tier:"hard", era:"post90" },
+  { id:84, title:"最近",             artist:"李聖傑", videoId:"azOIvILpIW8", start:50, tier:"hard", era:"post90" },
+  { id:85, title:"千年之戀",         artist:"飛兒樂團", videoId:"5fTrPL5b4Lg", start:50, tier:"hard", era:"post90" },
+  { id:86, title:"句號",             artist:"鄧紫棋", videoId:"7XlqcS6B7WA", start:50, tier:"hard", era:"post90" },
+  { id:77, title:"那不是雪中紅",     artist:"JPM",    videoId:"bLdTK7XnPmk", start:50, tier:"hard", era:"post90" },
+  { id:68, title:"光",               artist:"黃氏兄弟", videoId:"VdULKZtwwH8", start:50, tier:"hard", era:"post90" },
+  { id:69, title:"星期五晚上",       artist:"Energy", videoId:"btPv0-d3NbE", start:50, tier:"hard", era:"post90" },
+
+  // --- 魔王：老歌迷才秒答的歌單 ---
+  { id:11, title:"說謊",             artist:"林宥嘉", videoId:"ftfJRzW0MPo", start:55, tier:"boss", era:"post90" },
+  { id:12, title:"身騎白馬",         artist:"徐佳瑩", videoId:"VzXOT26_Da8", start:65, tier:"boss", era:"post90" },
+  { id:13, title:"早安晨之美",       artist:"盧廣仲", videoId:"jAlWCr5cIjE", start:40, tier:"boss", era:"post90" },
+  { id:14, title:"忠孝東路走九遍",   artist:"動力火車", videoId:"hFJAzTqYFHc", start:50, tier:"boss", era:"post90" },
+  { id:15, title:"蓋世英雄",         artist:"王力宏", videoId:"K60TLtgGz7o", start:45, tier:"boss", era:"post90" },
+  { id:16, title:"修煉愛情",         artist:"林俊傑", videoId:"LWV-f6dMN3Q", start:58, tier:"boss", era:"post90" },
+  { id:17, title:"小情歌",           artist:"蘇打綠", videoId:"in8NNzwFa-s", start:65, tier:"boss", era:"post90" },
+  { id:18, title:"一個像夏天一個像秋天", artist:"范瑋琪", videoId:"2-sqX7JiIjA", start:50, tier:"boss", era:"post90" },
+  { id:27, title:"100種生活",        artist:"盧廣仲", videoId:"nPcByqGfxQo", start:45, tier:"boss", era:"post90" },
+  { id:28, title:"無眠",             artist:"蘇打綠", videoId:"z2TtliknCEA", start:55, tier:"boss", era:"post90" },
+  { id:29, title:"當",               artist:"動力火車", videoId:"XQl8NJceqjY", start:50, tier:"boss", era:"post90" },
+  { id:30, title:"你要的愛",         artist:"戴佩妮", videoId:"2X8zK_ck5KU", start:50, tier:"boss", era:"post90" },
+  { id:41, title:"彩虹",             artist:"動力火車", videoId:"fYrBo8XEssE", start:50, tier:"boss", era:"post90" },
+  { id:42, title:"國境之南",         artist:"范逸臣", videoId:"oyQZg2X_cd0", start:50, tier:"boss", era:"post90" },
+  { id:43, title:"三天三夜",         artist:"張惠妹", videoId:"NFHb0OwmE-0", start:50, tier:"boss", era:"post90" },
+  { id:44, title:"童話",             artist:"光良",   videoId:"bBcp_ljCBGU", start:50, tier:"boss", era:"post90" },
+  { id:49, title:"起風了",           artist:"買辣椒也用券", videoId:"3tJUflhYIpo", start:50, tier:"boss", era:"post90" },
+  { id:50, title:"阿拉斯加海灣",     artist:"菲道爾", videoId:"kU0oHbP4ZDk", start:50, tier:"boss", era:"post90" },
+  { id:70, title:"放手（復合版）",   artist:"Energy", videoId:"TtKvZZX814c", start:50, tier:"boss", era:"post90" },
+  { id:71, title:"愛上你算我賤",     artist:"周湯豪", videoId:"8urFHH4lPUg", start:50, tier:"boss", era:"post90" },
+  { id:72, title:"小城夏天",         artist:"LBI利比", videoId:"L_aFcvFmRWo", start:50, tier:"boss", era:"post90" },
+  { id:73, title:"分合",             artist:"Energy", videoId:"Yx6um89NRAQ", start:50, tier:"boss", era:"post90" },
+  { id:78, title:"什麼都不必說（2022 Remix）", artist:"比莉、周湯豪", videoId:"oDhNxLk1B7I", start:50, tier:"boss", era:"post90" },
+  { id:74, title:"毒藥",             artist:"蕭秉治", videoId:"rgTQYCo0WCM", start:50, tier:"boss", era:"post90" },
+  { id:122, title:"步步",            artist:"五月天", videoId:"97axrS3Npxk", start:50, tier:"easy", era:"post90" },
+  { id:123, title:"乾杯",            artist:"五月天", videoId:"qX2GsMj7154", start:50, tier:"easy", era:"post90" },
+  { id:124, title:"星空",            artist:"五月天", videoId:"zDJfLjUTapA", start:50, tier:"easy", era:"post90" },
+  { id:125, title:"憨人",            artist:"五月天", videoId:"1j_mpwKmlJg", start:50, tier:"hard", era:"post90" },
+  { id:126, title:"將軍令",          artist:"五月天", videoId:"_XYcCNY-ass", start:50, tier:"hard", era:"post90" },
+  { id:127, title:"入陣曲",          artist:"五月天", videoId:"DDs5bXh4erM", start:50, tier:"hard", era:"post90" },
+  // --- 70 年代經典老歌 ---
+  { id:128, title:"月亮代表我的心",  artist:"鄧麗君", videoId:"eOtATMfvfg8", start:50, tier:"easy", era:"pre90" },
+  { id:129, title:"甜蜜蜜",          artist:"鄧麗君", videoId:"5eF8oOWtsk4", start:50, tier:"easy", era:"pre90" },
+  { id:130, title:"橄欖樹",          artist:"齊豫",   videoId:"UNhtAfz4Ghw", start:50, tier:"easy", era:"pre90" },
+  { id:131, title:"往事只能回味",    artist:"尤雅",   videoId:"J68LSs565_A", start:50, tier:"easy", era:"pre90" },
+  { id:132, title:"小城故事",        artist:"鄧麗君", videoId:"VOLfjF0SQYY", start:50, tier:"hard", era:"pre90" },
+  { id:133, title:"我是一片雲",      artist:"鳳飛飛", videoId:"GSgYUqsqngA", start:50, tier:"hard", era:"pre90" },
+  { id:134, title:"千言萬語",        artist:"鄧麗君", videoId:"4zfLKRI09G4", start:50, tier:"hard", era:"pre90" },
+  { id:135, title:"海韻",            artist:"鄧麗君", videoId:"uXAMWpBZf_U", start:50, tier:"hard", era:"pre90" },
+  { id:136, title:"蘭花草",          artist:"劉文正", videoId:"a0pEBo95OwY", start:50, tier:"boss", era:"pre90" },
+  { id:137, title:"梅花",            artist:"劉家昌", videoId:"74FdWFaN4Yw", start:50, tier:"boss", era:"pre90" },
+  { id:138, title:"外婆的澎湖灣",    artist:"潘安邦", videoId:"JEoNjnyd56s", start:50, tier:"easy", era:"pre90" },
+  { id:139, title:"鄉間的小路",      artist:"葉佳修", videoId:"abBnysri-XI", start:50, tier:"easy", era:"pre90" },
+  { id:140, title:"空港",            artist:"鄧麗君", videoId:"Vr6AxVGpTC0", start:50, tier:"hard", era:"pre90" },
+  { id:141, title:"雁兒在林梢",      artist:"鳳飛飛", videoId:"N-AowcqJ4GI", start:50, tier:"hard", era:"pre90" },
+  { id:142, title:"榕樹下",          artist:"余天",   videoId:"RKv1WkSeQs4", start:50, tier:"hard", era:"pre90" },
+  { id:143, title:"誓言",            artist:"甄妮",   videoId:"8J-7nux8DCc", start:50, tier:"boss", era:"pre90" },
+  { id:144, title:"散場",            artist:"劉文正", videoId:"ABywUMzSq6k", start:50, tier:"boss", era:"pre90" },
+  { id:145, title:"姑娘的酒窩",      artist:"高凌風", videoId:"dUlXfeVdO5Q", start:50, tier:"hard", era:"pre90" },
+  { id:146, title:"晚安曲",          artist:"費玉清", videoId:"xrBzx1WjD7I", start:30, tier:"hard", era:"pre90" },
+  { id:147, title:"阿美阿美",        artist:"王夢麟", videoId:"WztSBN1f95A", start:50, tier:"boss", era:"pre90" },
+  { id:148, title:"讓我們看雲去",    artist:"陳明韶", videoId:"hPyZlQ6zFaI", start:50, tier:"boss", era:"pre90" },
+  { id:149, title:"看我聽我",        artist:"包美聖", videoId:"g1O1PQlCh-g", start:50, tier:"boss", era:"pre90" },
+  { id:150, title:"意難忘",          artist:"尤雅",   videoId:"e4WudjskwXg", start:50, tier:"boss", era:"pre90" },
+  { id:151, title:"一顆紅豆",        artist:"鳳飛飛", videoId:"Q2fmrIyZAVk", start:50, tier:"hard", era:"pre90" },
+  { id:152, title:"海鷗",            artist:"甄妮",   videoId:"Ip3oEUkVdvQ", start:50, tier:"hard", era:"pre90" },
+  { id:153, title:"今天不回家",      artist:"姚蘇蓉", videoId:"WbU-oWW0qXI", start:50, tier:"hard", era:"pre90" },
+  { id:154, title:"秋蟬",            artist:"楊芳儀、徐曉菁", videoId:"EcXd1XI4eIA", start:50, tier:"boss", era:"pre90" },
+  { id:155, title:"小雨中的回憶",    artist:"劉藍溪", videoId:"eSUXqtrbKfE", start:50, tier:"boss", era:"pre90" },
+  { id:156, title:"如果",            artist:"邰肇玫、施碧梧", videoId:"J2hyMigLY3U", start:50, tier:"boss", era:"pre90" },
+  { id:157, title:"諾言",            artist:"劉文正", videoId:"O8k09V2g-XQ", start:50, tier:"boss", era:"pre90" },
+  { id:158, title:"蔓莉",            artist:"謝雷",   videoId:"aR5FVnvbWKA", start:50, tier:"boss", era:"pre90" },
+  { id:159, title:"微風往事",        artist:"鄭怡",   videoId:"Owt60pHbEak", start:50, tier:"boss", era:"pre90" },
+  { id:160, title:"心影",            artist:"鳳飛飛", videoId:"tTIGf1ID9Fo", start:50, tier:"boss", era:"pre90" },
+  { id:161, title:"月朦朧鳥朦朧",    artist:"鳳飛飛", videoId:"PcfGJiOISIA", start:50, tier:"hard", era:"pre90" },
+  { id:162, title:"一支小雨傘",      artist:"洪榮宏", videoId:"CUvqXEYim8k", start:50, tier:"boss", era:"pre90" },
+  { id:163, title:"楓葉情",          artist:"甄妮",   videoId:"VSEBTMTWPpc", start:50, tier:"boss", era:"pre90" },
+  { id:164, title:"漁唱",            artist:"黃大城", videoId:"Pu2_EraUcmI", start:50, tier:"boss", era:"pre90" },
+  { id:165, title:"情人的關懷",      artist:"鄧麗君", videoId:"ZhN0ts9FiyM", start:50, tier:"hard", era:"pre90" },
+  // --- 80 年代經典老歌 ---
+  { id:166, title:"我只在乎你",      artist:"鄧麗君", videoId:"ObmqKPyjBC0", start:50, tier:"easy", era:"pre90" },
+  { id:167, title:"一剪梅",          artist:"費玉清", videoId:"Cc5atI-tiww", start:50, tier:"easy", era:"pre90" },
+  { id:168, title:"童年",            artist:"羅大佑", videoId:"rkLUuZnbi0w", start:50, tier:"easy", era:"pre90" },
+  { id:169, title:"夢醒時分",        artist:"陳淑樺", videoId:"fJI72eFFnTY", start:50, tier:"easy", era:"pre90" },
+  { id:170, title:"我的未來不是夢",  artist:"張雨生", videoId:"lTxZmhAoSGU", start:50, tier:"easy", era:"pre90" },
+  { id:171, title:"一樣的月光",      artist:"蘇芮",   videoId:"nRaxyCLiGGM", start:50, tier:"hard", era:"pre90" },
+  { id:172, title:"大約在冬季",      artist:"齊秦",   videoId:"B2GatE-cgRU", start:50, tier:"hard", era:"pre90" },
+  { id:173, title:"恰似你的溫柔",    artist:"蔡琴",   videoId:"Yvg3L7RbFHY", start:50, tier:"hard", era:"pre90" },
+  { id:174, title:"償還",            artist:"鄧麗君", videoId:"9wA4253KxGE", start:50, tier:"hard", era:"pre90" },
+  { id:175, title:"光陰的故事",      artist:"羅大佑", videoId:"lhhTi07pKDU", start:50, tier:"boss", era:"pre90" },
+  { id:176, title:"冬天裡的一把火",  artist:"費翔",   videoId:"3xKLu0xbNYw", start:50, tier:"easy", era:"pre90" },
+  { id:177, title:"青蘋果樂園",      artist:"小虎隊", videoId:"T8GpBer39ro", start:50, tier:"easy", era:"pre90" },
+  { id:178, title:"我想有個家",      artist:"潘美辰", videoId:"8w2LeDvM_lg", start:50, tier:"easy", era:"pre90" },
+  { id:179, title:"其實你不懂我的心", artist:"童安格", videoId:"S44bT7mxQ2M", start:50, tier:"easy", era:"pre90" },
+  { id:180, title:"酒矸倘賣無",      artist:"蘇芮",   videoId:"PCgLufmDrmM", start:50, tier:"hard", era:"pre90" },
+  { id:181, title:"是否我真的一無所有", artist:"王傑",  videoId:"rZ4TiY8FraU", start:50, tier:"hard", era:"pre90" },
+  { id:182, title:"驛動的心",        artist:"姜育恆", videoId:"o0lwCY9KAJs", start:50, tier:"hard", era:"pre90" },
+  { id:183, title:"狼",              artist:"齊秦",   videoId:"JM8a6FudZuc", start:50, tier:"hard", era:"pre90" },
+  { id:184, title:"鹿港小鎮",        artist:"羅大佑", videoId:"c5f518gPugE", start:50, tier:"boss", era:"pre90" },
+  { id:185, title:"野百合也有春天",  artist:"潘越雲", videoId:"Qr7YTCT2ki0", start:50, tier:"boss", era:"pre90" },
+  { id:186, title:"讀你",            artist:"蔡琴",   videoId:"CAtivvxfA_8", start:50, tier:"easy", era:"pre90" },
+  { id:187, title:"戀曲1980",        artist:"羅大佑", videoId:"tNldUTKkmxY", start:50, tier:"hard", era:"pre90" },
+  { id:188, title:"外面的世界",      artist:"齊秦",   videoId:"r5yOn-YT3tI", start:50, tier:"hard", era:"pre90" },
+  { id:189, title:"夢駝鈴",          artist:"費玉清", videoId:"L7u-nurVtNQ", start:50, tier:"hard", era:"pre90" },
+  { id:190, title:"雪在燒",          artist:"黃鶯鶯", videoId:"_yhFEBZgf7U", start:50, tier:"hard", era:"pre90" },
+  { id:191, title:"酒後的心聲",      artist:"江蕙",   videoId:"Y1H22SMnS5M", start:50, tier:"hard", era:"pre90" },
+  { id:192, title:"機場",            artist:"薛岳",   videoId:"PqD4BTSLRQc", start:50, tier:"boss", era:"pre90" },
+  { id:193, title:"小雨來得正是時候", artist:"鄭怡",   videoId:"fi953F85K4I", start:50, tier:"boss", era:"pre90" },
+  { id:194, title:"想你的時候",      artist:"千百惠", videoId:"_Fu93q2Nq3w", start:50, tier:"boss", era:"pre90" },
+  { id:195, title:"這個世界",        artist:"蔡藍欽", videoId:"O7v_0i5WfHs", start:50, tier:"boss", era:"pre90" },
+  { id:196, title:"龍的傳人",        artist:"李建復", videoId:"pvVqV7thPVM", start:50, tier:"easy", era:"pre90" },
+  { id:197, title:"愛人同志",        artist:"羅大佑", videoId:"5ZWOKKgsx-4", start:50, tier:"hard", era:"pre90" },
+  { id:198, title:"星星知我心",      artist:"蔡幸娟", videoId:"nIqao3sdTgA", start:50, tier:"hard", era:"pre90" },
+  { id:199, title:"你的眼神",        artist:"蔡琴",   videoId:"5j44NnKpHXo", start:50, tier:"hard", era:"pre90" },
+  { id:200, title:"之乎者也",        artist:"羅大佑", videoId:"tl4ToRGJq3k", start:50, tier:"boss", era:"pre90" },
+  { id:201, title:"桂花巷",          artist:"潘越雲", videoId:"AdoAWRSRr3A", start:50, tier:"boss", era:"pre90" },
+  { id:202, title:"是否",            artist:"蘇芮",   videoId:"V69HRRnD36E", start:50, tier:"boss", era:"pre90" },
+  { id:203, title:"請跟我來",        artist:"蘇芮",   videoId:"5rqvvaCtlL4", start:50, tier:"boss", era:"pre90" },
+  { id:204, title:"跟著感覺走",      artist:"蘇芮",   videoId:"tZhvAKhP65I", start:50, tier:"easy", era:"pre90" },
+  { id:205, title:"一場遊戲一場夢",  artist:"王傑",   videoId:"PyMOMl4rtBk", start:50, tier:"easy", era:"pre90" },
+  { id:206, title:"忘了你忘了我",    artist:"王傑",   videoId:"ilWzt6S-VJw", start:50, tier:"hard", era:"pre90" },
+  { id:207, title:"家",              artist:"羅大佑", videoId:"HWuaLmvBI0Q", start:50, tier:"hard", era:"pre90" },
+  { id:208, title:"忙與盲",          artist:"張艾嘉", videoId:"IN34o6E6iIE", start:50, tier:"hard", era:"pre90" },
+  { id:209, title:"最後一夜",        artist:"蔡琴",   videoId:"YwA0Tsgo_js", start:50, tier:"hard", era:"pre90" },
+  { id:210, title:"守著陽光守著你",  artist:"潘越雲", videoId:"Q1lJNw76oZw", start:50, tier:"boss", era:"pre90" },
+  { id:211, title:"台北的天空",      artist:"王芷蕾", videoId:"ZGRrJY7VELU", start:50, tier:"boss", era:"pre90" },
+  { id:212, title:"我是如此愛你",    artist:"林慧萍", videoId:"UyWTyVpqMXQ", start:50, tier:"boss", era:"pre90" },
+  { id:213, title:"未來的主人翁",    artist:"羅大佑", videoId:"yURnpNFpOqY", start:50, tier:"boss", era:"pre90" },
+  // --- 90 年代經典老歌 ---
+  { id:214, title:"吻別",            artist:"張學友", videoId:"v3NO6N-yxcg", start:50, tier:"easy", era:"pre90" },
+  { id:215, title:"花心",            artist:"周華健", videoId:"MdrIN0bCN4M", start:50, tier:"easy", era:"pre90" },
+  { id:216, title:"心太軟",          artist:"任賢齊", videoId:"nLs-HeDUl2E", start:50, tier:"easy", era:"pre90" },
+  { id:217, title:"領悟",            artist:"辛曉琪", videoId:"j37LLOz_ZLs", start:50, tier:"easy", era:"pre90" },
+  { id:218, title:"新不了情",        artist:"萬芳",   videoId:"2WnwudVfuNA", start:50, tier:"easy", era:"pre90" },
+  { id:219, title:"哭砂",            artist:"黃鶯鶯", videoId:"0mjsSwvtr0s", start:50, tier:"hard", era:"pre90" },
+  { id:220, title:"執迷不悔",        artist:"王菲",   videoId:"0WgYz2bevFs", start:50, tier:"hard", era:"pre90" },
+  { id:221, title:"征服",            artist:"那英",   videoId:"d-UyTMHOCHs", start:50, tier:"hard", era:"pre90" },
+  { id:222, title:"認錯",            artist:"優客李林", videoId:"5FRKtyk7BJI", start:50, tier:"hard", era:"pre90" },
+  { id:223, title:"精忠報國",        artist:"屠洪剛", videoId:"d02j7g7ff64", start:50, tier:"boss", era:"pre90" },
+  { id:224, title:"挪威的森林",      artist:"伍佰",   videoId:"mpUiuURbrM4", start:50, tier:"easy", era:"pre90" },
+  { id:225, title:"千年等一回",      artist:"高勝美", videoId:"PSd9VzuRMEw", start:50, tier:"easy", era:"pre90" },
+  { id:226, title:"剪愛",            artist:"張惠妹", videoId:"V2yhZrHKMq0", start:50, tier:"hard", era:"pre90" },
+  { id:227, title:"信仰",            artist:"張信哲", videoId:"bsSCKw1A5Ik", start:50, tier:"hard", era:"pre90" },
+  { id:228, title:"太傻",            artist:"巫啟賢", videoId:"UzsuWmn0cnU", start:50, tier:"hard", era:"pre90" },
+  { id:229, title:"檸檬樹",          artist:"蘇慧倫", videoId:"C0dQ9nsisFo", start:50, tier:"hard", era:"pre90" },
+  { id:230, title:"濤聲依舊",        artist:"毛寧",   videoId:"wY5SOxcMc1E", start:50, tier:"boss", era:"pre90" },
+  { id:231, title:"你怎麼捨得我難過", artist:"黃品源", videoId:"4jKtyubF9cQ", start:50, tier:"boss", era:"pre90" },
+  { id:232, title:"傷痕",            artist:"林憶蓮", videoId:"Uc-nHtzbZmU", start:50, tier:"boss", era:"pre90" },
+  { id:233, title:"花田錯",          artist:"王力宏", videoId:"re2GblxOuHQ", start:50, tier:"easy", era:"pre90" },
+  { id:234, title:"我是一隻小小鳥",  artist:"趙傳",   videoId:"uCrvWhMafP4", start:50, tier:"hard", era:"pre90" },
+  { id:235, title:"我很醜可是我很溫柔", artist:"趙傳",  videoId:"q852RGzkoWY", start:50, tier:"hard", era:"pre90" },
+  { id:236, title:"滾滾紅塵",        artist:"陳淑樺", videoId:"9eG2ry7SLqA", start:50, tier:"hard", era:"pre90" },
+  { id:237, title:"新鴛鴦蝴蝶夢",    artist:"黃安",   videoId:"NsPHtrVAjug", start:50, tier:"hard", era:"pre90" },
+  { id:238, title:"眼淚",            artist:"范曉萱", videoId:"yL54UTuhh4M", start:50, tier:"boss", era:"pre90" },
+  { id:239, title:"回家",            artist:"順子",   videoId:"YoqKPfOj8hg", start:50, tier:"boss", era:"pre90" },
+  { id:240, title:"再回首",          artist:"姜育恆", videoId:"H6h9KArKGyc", start:50, tier:"boss", era:"pre90" },
+  { id:241, title:"讓步",            artist:"陳明真", videoId:"DiQ-YvvSbTY", start:50, tier:"boss", era:"pre90" },
+  { id:242, title:"青梅竹馬",        artist:"周治平", videoId:"9BzKj5HOOCE", start:50, tier:"boss", era:"pre90" },
+  { id:243, title:"有多少愛可以重來", artist:"迪克牛仔", videoId:"lY0SJqEPEtM", start:50, tier:"easy", era:"pre90" },
+  { id:244, title:"姊妹",            artist:"張惠妹", videoId:"Xk0VzsABur4", start:50, tier:"easy", era:"pre90" },
+  { id:245, title:"白天不懂夜的黑",  artist:"那英",   videoId:"9ev_Xub3Wtc", start:50, tier:"hard", era:"pre90" },
+  { id:246, title:"讓我歡喜讓我憂",  artist:"周華健", videoId:"itYolVNdWxs", start:50, tier:"hard", era:"pre90" },
+  { id:247, title:"魯冰花",          artist:"曾淑勤", videoId:"YyVBDh_o8P0", start:50, tier:"hard", era:"pre90" },
+  { id:248, title:"我是不是你最疼愛的人", artist:"潘越雲", videoId:"I9i1wIkIOfw", start:50, tier:"boss", era:"pre90" },
+  { id:249, title:"激情過後",        artist:"張清芳", videoId:"KgSCFL2DatU", start:50, tier:"boss", era:"pre90" },
+  { id:250, title:"水手",            artist:"鄭智化", videoId:"Xhuni8ASx9c", start:50, tier:"easy", era:"pre90" },
+  { id:251, title:"星星點燈",        artist:"鄭智化", videoId:"IFm1cFXFqjU", start:50, tier:"easy", era:"pre90" },
+  { id:252, title:"漂洋過海來看你",  artist:"娃娃(金智娟)", videoId:"HKcev8Cn4Ss", start:50, tier:"hard", era:"pre90" },
+  { id:253, title:"把悲傷留給自己",  artist:"陳昇",   videoId:"UIwUmxcltj8", start:50, tier:"hard", era:"pre90" },
+  { id:254, title:"讓每個人都心碎",  artist:"黃大煒", videoId:"UvtucozI7po", start:50, tier:"boss", era:"pre90" },
+  { id:255, title:"等你等到我心痛",  artist:"巫啟賢", videoId:"itoWnyB5DWo", start:50, tier:"boss", era:"pre90" },
+  { id:256, title:"對面的女孩看過來", artist:"任賢齊", videoId:"6aosRlnxg9I", start:50, tier:"hard", era:"pre90" },
+  // --- 2000 年代經典老歌 ---
+  { id:257, title:"陰天",            artist:"莫文蔚", videoId:"tYWufUugeUc", start:50, tier:"easy", era:"post90" },
+  { id:258, title:"最初的夢想",      artist:"范瑋琪", videoId:"wGAmgmZg-48", start:50, tier:"easy", era:"post90" },
+  { id:259, title:"三個願望",        artist:"梁文音", videoId:"zwr61OV3ihI", start:50, tier:"hard", era:"post90" },
+  { id:260, title:"親愛的你怎麼不在我身邊", artist:"江美琪", videoId:"H6E6XaVSYgY", start:50, tier:"hard", era:"post90" },
+  { id:261, title:"最熟悉的陌生人",  artist:"蕭亞軒", videoId:"uQ4CmekLgiM", start:50, tier:"hard", era:"pre90" },
+  { id:262, title:"簡單愛",          artist:"周杰倫", videoId:"DloddSGraT0", start:50, tier:"easy", era:"post90" },
+  { id:263, title:"開不了口",        artist:"周杰倫", videoId:"QWQ68uDdsGg", start:50, tier:"easy", era:"post90" },
+  { id:264, title:"睫毛彎彎",        artist:"王心凌", videoId:"FzKO6WZN5b4", start:50, tier:"easy", era:"post90" },
+  { id:265, title:"十年",            artist:"陳奕迅", videoId:"ZUc6mnHGzIM", start:50, tier:"hard", era:"post90" },
+  { id:266, title:"隱形的翅膀",      artist:"張韶涵", videoId:"Lp-VLoa4wPo", start:50, tier:"hard", era:"post90" },
+  { id:267, title:"東風破",          artist:"周杰倫", videoId:"Xw6WHXUBdzQ", start:50, tier:"hard", era:"post90" },
+  { id:268, title:"布拉格廣場",      artist:"蔡依林", videoId:"o0SqB7HjORQ", start:50, tier:"boss", era:"post90" },
+  { id:269, title:"不想長大",        artist:"S.H.E",  videoId:"cfBtKB0dSso", start:50, tier:"easy", era:"post90" },
+  { id:270, title:"唯一",            artist:"王力宏", videoId:"4BtoX1L7pQ0", start:50, tier:"hard", era:"post90" },
+  { id:271, title:"看我72變",        artist:"蔡依林", videoId:"ahL-wDirD3c", start:50, tier:"hard", era:"post90" },
+  { id:272, title:"我以為",          artist:"品冠",   videoId:"IVqY5K7vBME", start:50, tier:"boss", era:"post90" },
+  { id:273, title:"龍捲風",          artist:"周杰倫", videoId:"e_CFQZdcJzI", start:50, tier:"easy", era:"post90" },
+  { id:274, title:"青花瓷",          artist:"周杰倫", videoId:"qXAgLGdIcWY", start:50, tier:"easy", era:"post90" },
+  { id:275, title:"綠光",            artist:"孫燕姿", videoId:"pztQtHvZkRc", start:50, tier:"easy", era:"post90" },
+  { id:276, title:"淘汰",            artist:"陳奕迅", videoId:"oXOPKUNetMI", start:50, tier:"easy", era:"post90" },
+  { id:277, title:"髮如雪",          artist:"周杰倫", videoId:"Yoea0k2thHY", start:50, tier:"hard", era:"post90" },
+  { id:278, title:"半島鐵盒",        artist:"周杰倫", videoId:"17w04fTYdjo", start:50, tier:"hard", era:"post90" },
+  { id:279, title:"心跳",            artist:"王力宏", videoId:"d1GjuHisVTk", start:50, tier:"hard", era:"post90" },
+  { id:280, title:"遺失的美好",      artist:"張韶涵", videoId:"JA5qoG_OY34", start:50, tier:"hard", era:"post90" },
+  { id:281, title:"找自己",          artist:"陶喆",   videoId:"DZf9HdAu0Wg", start:50, tier:"boss", era:"post90" },
+  { id:282, title:"紅色高跟鞋",      artist:"蔡健雅", videoId:"ATblV50Odx8", start:50, tier:"boss", era:"post90" },
+  // --- 2010 年代之後 ---
+  { id:283, title:"泡沫",            artist:"鄧紫棋", videoId:"c6FDZnB4jF8", start:50, tier:"easy", era:"post90" },
+  { id:284, title:"光年之外",        artist:"鄧紫棋", videoId:"EodHjD9Ujuc", start:50, tier:"easy", era:"post90" },
+  { id:285, title:"你不是真正的快樂", artist:"五月天", videoId:"lBH-9Y4EH2U", start:50, tier:"easy", era:"post90" },
+  { id:286, title:"有點甜",          artist:"汪蘇瀧、By2", videoId:"kiqn8DJM4Jo", start:50, tier:"easy", era:"post90" },
+  { id:287, title:"大丈夫",          artist:"蔡依林", videoId:"UuuEd91Ek5c", start:50, tier:"hard", era:"post90" },
+  { id:288, title:"浪流連",          artist:"茄子蛋", videoId:"AOz0k1zclTE", start:50, tier:"hard", era:"post90" },
+  { id:289, title:"對的人",          artist:"戴愛玲", videoId:"O1xy3RgDUiA", start:50, tier:"boss", era:"post90" },
+  { id:290, title:"你是我的眼",      artist:"蕭煌奇", videoId:"SG28l8JPkk0", start:50, tier:"easy", era:"post90" },
+  { id:291, title:"有一種悲傷",      artist:"A-Lin",  videoId:"Y2s5P9OKaVo", start:50, tier:"easy", era:"post90" },
+  { id:292, title:"她說",            artist:"林俊傑", videoId:"AtPkUCqkbUM", start:50, tier:"hard", era:"post90" },
+  { id:293, title:"魔鬼中的天使",    artist:"田馥甄", videoId:"6O_T_g91DUQ", start:50, tier:"hard", era:"post90" },
+  { id:294, title:"愛情你比我想的閣較偉大", artist:"茄子蛋", videoId:"Z_t93C_IlRg", start:50, tier:"hard", era:"post90" },
+  { id:295, title:"帶你飛",          artist:"告五人", videoId:"RpkBWePBSnk", start:50, tier:"boss", era:"post90" },
+];
+
+const DIFFICULTIES = {
+  easy:   { label:"簡單", clipSeconds:10, questionCount:4 },
+  hard:   { label:"困難", clipSeconds:8,  questionCount:6 },
+  boss:   { label:"魔王", clipSeconds:5,  questionCount:8 },
+  random: { label:"隨機", clipSeconds:null, questionCount:null },
+};
+
+/* ===================== 年代篩選（復古 / 新潮 / 大亂鬥） ===================== */
+const ERA_LABELS = { pre90:"懷舊金曲（70~90 年代）", post90:"千禧新聲（2000 年代以後）", mixed:"大亂鬥（不限年代）" };
+let selectedEra = 'mixed';
+function eraPool(){
+  if(selectedEra === 'pre90') return SONGS.filter(s=>s.era === 'pre90');
+  if(selectedEra === 'post90') return SONGS.filter(s=>s.era === 'post90');
+  return SONGS;
+}
+
+/* ===================== 難度不綁歌曲，改成綁「播放哪一段」 =====================
+   每首歌都收錄了一個「最好認的段落」(通常是副歌) 當作 song.start。
+   簡單：就播那一段。困難：往前抓主歌的位置。魔王：抓最接近開頭、最難認的位置。
+   所有歌在任何難度都可能被抽到，差別只在播放片段的位置跟長度。
+======================================================= */
+const TIER_CLIP_SECONDS = { easy:10, hard:8, boss:5 };
+
+function segmentStartFor(song, level){
+  const base = song.start;
+  if(level === 'easy') return base;
+  if(level === 'hard') return Math.max(10, Math.round(base * 0.6));
+  // 魔王：原本 15% 對大多數預設 start:50 的歌曲會落在 7~8 秒，還在前奏、根本沒人聲，聽了也認不出來。
+  // 提高地板到 10 秒、比例拉到 30%，讓片段至少落在主歌有人聲的地方，維持「比困難更早、更難猜」但仍聽得出來。
+  return Math.max(10, Math.round(base * 0.3)); // boss
+}
+
+function makeQuestionSong(baseSong, level){
+  return Object.assign({}, baseSong, { start: segmentStartFor(baseSong, level) });
+}
+
+function buildRandomQuestions(){
+  const count = 4 + Math.floor(Math.random()*5); // 4~8
+  const levels = ['easy','hard','boss'];
+  const pool = shuffle(eraPool());
+  const questions = [];
+  for(let i=0;i<count && i<pool.length;i++){
+    const level = levels[Math.floor(Math.random()*3)];
+    questions.push({ song: makeQuestionSong(pool[i], level), clipSeconds: TIER_CLIP_SECONDS[level] });
+  }
+  return questions;
+}
+
+/* ===================== 共用工具 ===================== */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+/* ===================== 遊戲狀態 ===================== */
+let ytPlayer = null;
+let ytReady = false;
+let pendingCue = null;
+
+let state = {
+  diffKey:null,
+  questions:[],   // [{song, clipSeconds}]
+  index:0,
+  score:0,
+  answered:false,
+  answers:[],     // {song, clipSeconds, chosen, correct}
+  isPlaying:false,
+  clipElapsedMs:0,    // 這題目前已經播放掉的毫秒數（暫停會保留）
+  rafId:null,
+  lastTickTs:0,
+  countdownTimer:null,
+};
+
+/* ===================== 倒數嗶聲（跟 YouTube 無關，純瀏覽器音效） ===================== */
+function beep(freq, dur){
+  try{
+    if(!beep.ctx) beep.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = beep.ctx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  }catch(err){ console.warn('beep failed', err); }
+}
+
+function clearCountdown(){
+  if(state.countdownTimer){ clearInterval(state.countdownTimer); state.countdownTimer = null; }
+}
+
+function startCountdown(){
+  clearCountdown();
+  let n = 3;
+  const label = document.getElementById('play-btn');
+  label.textContent = String(n);
+  document.getElementById('play-hint').textContent = `即將自動播放…${n}`;
+  beep(660, 0.12);
+  state.countdownTimer = setInterval(()=>{
+    n--;
+    if(n > 0){
+      label.textContent = String(n);
+      document.getElementById('play-hint').textContent = `即將自動播放…${n}`;
+      beep(660, 0.12);
+    } else {
+      clearInterval(state.countdownTimer);
+      state.countdownTimer = null;
+      beep(1046, 0.18);
+      revealAudio();
+    }
+  }, 1000);
+}
+
+function revealAudio(retries){
+  retries = retries || 0;
+  if(state.answered) return;
+  if(!ytPlayer || !ytReady){
+    if(retries > 20){
+      document.getElementById('play-hint').textContent = '⚠️ 播放器一直連不上，請按下方「跳過」看答案';
+      return;
+    }
+    setTimeout(()=>revealAudio(retries+1), 300);
+    return;
+  }
+  startPlayback();
+}
+
+/* ===================== YouTube IFrame API ===================== */
+window.onYouTubeIframeAPIReady = function(){
+  ytPlayer = new YT.Player('yt-player', {
+    height: '498',
+    width: '280',
+    playerVars:{
+      controls:0, disablekb:1, modestbranding:1, rel:0,
+      iv_load_policy:3, fs:0, playsinline:1, origin: location.origin
+    },
+    events:{
+      onReady: function(){
+        ytReady = true;
+        hideApiWarning();
+        if(pendingCue){ primeSong(pendingCue); pendingCue = null; }
+      },
+      onStateChange: onPlayerStateChange,
+      onError: onPlayerError
+    }
+  });
+};
+(function loadYT(){
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.body.appendChild(tag);
+  setTimeout(()=>{ if(!ytReady) showApiWarning(); }, 6000);
+})();
+
+function showApiWarning(){
+  const el = document.getElementById('api-warning');
+  if(el) el.style.display = 'block';
+}
+function hideApiWarning(){
+  const el = document.getElementById('api-warning');
+  if(el) el.style.display = 'none';
+}
+
+let awaitingPlayStart = false;
+let playWatchdog = null;
+
+function onPlayerStateChange(e){
+  if(e.data === YT.PlayerState.PLAYING && awaitingPlayStart){
+    awaitingPlayStart = false;
+    clearTimeout(playWatchdog);
+    unmuteAndGo();
+  }
+}
+
+const YT_ERROR_MESSAGES = {
+  2: '影片參數錯誤（無效的 video ID）',
+  5: '此瀏覽器的 HTML5 播放器發生錯誤',
+  100: '找不到這部影片（可能已下架或設為不公開）',
+  101: '影片擁有者停用了嵌入播放',
+  150: '影片擁有者停用了嵌入播放',
+};
+function onPlayerError(e){
+  awaitingPlayStart = false;
+  clearTimeout(playWatchdog);
+  stopProgressLoop();
+  setPlayingUI(false);
+  const detail = YT_ERROR_MESSAGES[e.data] || ('未知錯誤代碼 ' + e.data);
+  document.getElementById('play-hint').textContent = `⚠️ 播放失敗：${detail}（錯誤碼 ${e.data}）。請用下方「跳過」看答案`;
+  console.error('[猜歌遊戲] YouTube player error', e.data, '目前題目 videoId =', state.questions[state.index] && state.questions[state.index].song.videoId);
+}
+
+function cueSong(song){
+  const opts = { videoId: song.videoId, startSeconds: song.start };
+  if(ytReady && ytPlayer && ytPlayer.cueVideoById){
+    primeSong(opts);
+  } else {
+    pendingCue = opts;
+  }
+}
+
+// 一開始就靜音把影片播起來（藏在黑膠後面），倒數結束後只要「取消靜音」即可，
+// 全程不呼叫 pauseVideo/playVideo 來做暫停/繼續，避免 YouTube 自己的播放/暫停圖示閃出來
+function primeSong(opts){
+  try{
+    ytPlayer.mute();
+    ytPlayer.cueVideoById(opts);
+    setTimeout(()=>{ try{ ytPlayer.playVideo(); }catch(err){} }, 50);
+  }catch(err){ console.warn('primeSong failed', err); }
+}
+
+/* ===================== 畫面切換 ===================== */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ===================== 年代選擇 ===================== */
+document.querySelectorAll('#screen-era .diff-card').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    selectedEra = btn.dataset.era;
+    document.getElementById('era-label').textContent = ERA_LABELS[selectedEra];
+    showScreen('screen-start');
+  });
+});
+document.getElementById('change-era-btn').addEventListener('click', ()=> showScreen('screen-era'));
+
+/* ===================== 開始遊戲 ===================== */
+document.querySelectorAll('#screen-start .diff-card').forEach(btn=>{
+  btn.addEventListener('click', ()=> startGame(btn.dataset.diff));
+});
+
+function startGame(diffKey){
+  let questions;
+  if(diffKey === 'random'){
+    questions = buildRandomQuestions();
+  } else {
+    const diff = DIFFICULTIES[diffKey];
+    const pool = shuffle(eraPool());
+    const picked = pool.slice(0, diff.questionCount);
+    questions = picked.map(song=>({ song: makeQuestionSong(song, diffKey), clipSeconds: diff.clipSeconds }));
+  }
+
+  state = { diffKey, questions, index:0, score:0, answered:false, answers:[],
+    isPlaying:false, clipElapsedMs:0, rafId:null, lastTickTs:0, countdownTimer:null };
+  document.getElementById('hud-diff').textContent = DIFFICULTIES[diffKey].label;
+  document.getElementById('hud-score').style.display = '';
+  document.getElementById('mp-scoreboard-row').style.display = 'none';
+  showScreen('screen-game');
+  loadQuestion();
+}
+
+/* ===================== 載入題目 ===================== */
+function loadQuestion(){
+  stopProgressLoop();
+  clearCountdown();
+  clearTimeout(playWatchdog);
+  awaitingPlayStart = false;
+  state.isPlaying = false;
+  state.clipElapsedMs = 0;
+  const q = state.questions[state.index];
+
+  document.getElementById('hud-progress').textContent = `第 ${state.index+1} / ${state.questions.length} 題`;
+  document.getElementById('hud-score').textContent = `分數 ${state.score}`;
+  document.getElementById('next-wrap').style.display = 'none';
+
+  const stage = document.getElementById('record-stage');
+  stage.classList.remove('revealed');
+  const vinyl = document.getElementById('vinyl');
+  // 黑膠要「瞬間」蓋回去，不要用掀開時的那段動畫，先關掉 transition 再切 class
+  vinyl.style.transition = 'none';
+  vinyl.classList.remove('opened');
+  vinyl.classList.remove('spinning');
+  void vinyl.offsetWidth; // 強制重繪，讓上面的瞬間位移生效
+  vinyl.style.transition = '';
+  // 提前把封面圖載入好（但還是隱藏的），掀黑膠時才不會有空窗期看到底下的 MV
+  document.getElementById('cover-img').src = `https://img.youtube.com/vi/${q.song.videoId}/hqdefault.jpg`;
+
+  document.getElementById('skip-btn').disabled = false;
+  document.getElementById('skip-btn').style.display = '';
+  document.getElementById('playback-status').style.display = '';
+  resetClipBar();
+
+  cueSong(q.song);
+  state.answered = false;
+
+  renderChoices(q.song);
+  document.getElementById('choices').style.display = 'none';
+  startCountdown();
+}
+
+function renderChoices(correctSong){
+  const others = shuffle(eraPool().filter(s=>s.id !== correctSong.id)).slice(0,3);
+  const options = shuffle([correctSong, ...others]);
+
+  const wrap = document.getElementById('choices');
+  wrap.innerHTML = '';
+  options.forEach(song=>{
+    const b = document.createElement('button');
+    b.className = 'choice-btn';
+    b.textContent = song.title;
+    b.addEventListener('click', ()=> onChoose(song, correctSong, b));
+    wrap.appendChild(b);
+  });
+}
+
+/* ===================== 揭曉聲音（取消靜音，不呼叫播放/暫停） ===================== */
+function startPlayback(){
+  const q = state.questions[state.index];
+  clearTimeout(playWatchdog);
+  document.getElementById('play-hint').textContent = `片段長度 ${q.clipSeconds} 秒 · 播放中…`;
+
+  const isAlreadyPlaying = ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+  if(isAlreadyPlaying){
+    unmuteAndGo();
+  } else {
+    // 靜音預播還沒真正開始（可能還在緩衝），先確保有呼叫播放，等 onPlayerStateChange 確認後再取消靜音
+    awaitingPlayStart = true;
+    try{ ytPlayer.playVideo(); }catch(err){ console.warn('playVideo failed', err); }
+    playWatchdog = setTimeout(()=>{
+      if(awaitingPlayStart){
+        awaitingPlayStart = false;
+        if(!state.answered){
+          document.getElementById('play-hint').textContent = '⚠️ 播放似乎卡住了，請確認網路連線正常，或按「跳過」直接看答案';
+        }
+      }
+    }, 6000);
+  }
+}
+
+function unmuteAndGo(){
+  try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(err){ console.warn('unMute failed', err); }
+  document.getElementById('choices').style.display = 'grid';
+  setPlayingUI(true);
+  if(!state.rafId) startProgressLoop();
+}
+
+function setPlayingUI(isPlaying){
+  state.isPlaying = isPlaying;
+  document.getElementById('play-btn').textContent = '';
+  document.getElementById('vinyl').classList.toggle('spinning', isPlaying);
+}
+
+function startProgressLoop(){
+  const q = state.questions[state.index];
+  const totalMs = q.clipSeconds * 1000;
+  const fill = document.getElementById('clip-bar-fill');
+  state.lastTickTs = performance.now();
+
+  function tick(now){
+    state.clipElapsedMs += now - state.lastTickTs;
+    state.lastTickTs = now;
+    const pct = Math.min(100, (state.clipElapsedMs / totalMs) * 100);
+    fill.style.width = pct + '%';
+
+    if(state.clipElapsedMs >= totalMs){
+      onClipLimitReached();
+      return;
+    }
+    state.rafId = requestAnimationFrame(tick);
+  }
+  state.rafId = requestAnimationFrame(tick);
+}
+
+function stopProgressLoop(){
+  if(state.rafId){ cancelAnimationFrame(state.rafId); state.rafId = null; }
+}
+
+function onClipLimitReached(){
+  stopProgressLoop();
+  try{ ytPlayer.mute(); }catch(err){}
+  setPlayingUI(false);
+  if(!state.answered){
+    document.getElementById('play-hint').textContent = '片段播完囉，選一個答案，或按「跳過」看答案';
+  }
+}
+
+function resetClipBar(){
+  stopProgressLoop();
+  const fill = document.getElementById('clip-bar-fill');
+  fill.style.width = '0%';
+}
+
+/* ===================== 作答 ===================== */
+function onChoose(chosenSong, correctSong, btnEl){
+  if(state.answered) return;
+  state.answered = true;
+  document.getElementById('choices').style.display = 'grid';
+  stopProgressLoop();
+  clearCountdown();
+  clearTimeout(playWatchdog);
+  awaitingPlayStart = false;
+  state.isPlaying = false;
+  document.getElementById('vinyl').classList.remove('spinning');
+  document.getElementById('play-btn').textContent = '';
+  document.getElementById('skip-btn').disabled = true;
+  document.getElementById('playback-status').style.display = 'none';
+
+  const isCorrect = !!chosenSong && chosenSong.id === correctSong.id;
+  if(isCorrect) state.score++;
+
+  document.querySelectorAll('.choice-btn').forEach(b=>{
+    b.disabled = true;
+    if(b.textContent === correctSong.title) b.classList.add('correct');
+    else if(b === btnEl) b.classList.add('wrong');
+  });
+
+  state.answers.push({
+    song: correctSong,
+    chosen: chosenSong,
+    correct: isCorrect,
+    clipSeconds: state.questions[state.index].clipSeconds
+  });
+
+  document.getElementById('hud-score').textContent = `分數 ${state.score}`;
+
+  revealVinyl(correctSong);
+
+  document.getElementById('next-wrap').style.display = 'block';
+  const nextBtn = document.getElementById('next-btn');
+  nextBtn.textContent = (state.index === state.questions.length-1) ? '查看結果 →' : '下一題 →';
+}
+
+function revealVinyl(correctSong){
+  document.getElementById('vinyl').classList.add('opened');
+  document.getElementById('reveal-title').textContent = correctSong.title;
+  document.getElementById('reveal-artist').textContent = correctSong.artist;
+
+  // 封面圖已經在 loadQuestion() 就先偷偷載入好了，這裡只要切 class 讓它瞬間顯示
+  document.getElementById('record-stage').classList.add('revealed');
+
+  // 掀開後繼續播放：只取消靜音，不呼叫 playVideo()，避免觸發 YouTube 內建的播放圖示
+  try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(err){ console.warn('unMute failed', err); }
+}
+
+document.getElementById('skip-btn').addEventListener('click', ()=>{
+  if(state.answered) return;
+  const q = state.questions[state.index];
+  onChoose(null, q.song, null);
+});
+
+/* ===================== 下一題 / 結果 ===================== */
+document.getElementById('next-btn').addEventListener('click', ()=>{
+  if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+  state.index++;
+  if(state.index >= state.questions.length){
+    showResult();
+  } else {
+    loadQuestion();
+  }
+});
+
+function showResult(){
+  showScreen('screen-result');
+  const total = state.questions.length;
+  document.getElementById('result-score').textContent = `${state.score} / ${total}`;
+  document.getElementById('result-sub').textContent = `答對率 ${Math.round(state.score/total*100)}% · 難度：${DIFFICULTIES[state.diffKey].label}`;
+
+  const list = document.getElementById('result-list');
+  list.innerHTML = '';
+  state.answers.forEach(a=>{
+    const row = document.createElement('div');
+    row.className = 'result-row ' + (a.correct ? 'correct' : 'wrong');
+    row.innerHTML = `
+      <div>
+        <div class="rt">${a.song.title}</div>
+        <div class="ra">${a.song.artist}${a.correct ? '' : (a.chosen ? '　你選了：'+a.chosen.title : '　（跳過未作答）')}</div>
+      </div>
+      <div class="mark">${a.correct ? '✔' : '✘'}</div>
+    `;
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('retry-btn').addEventListener('click', ()=> startGame(state.diffKey));
+document.getElementById('menu-btn').addEventListener('click', ()=> showScreen('screen-start'));
+
+/* ===================== 連線對戰 ===================== */
+let mp = {
+  code: null,
+  playerId: null,
+  name: null,
+  pollTimer: null,
+  countdownTimer: null,
+  lastPhase: null,
+  currentPhase: null,
+  lastIndex: -1,
+  answered: false,
+  chatLastId: 0,
+  chatUnread: 0,
+  chatOpen: false,
+};
+
+function mpRenderPlayerChips(container, players, opts){
+  opts = opts || {};
+  const sorted = opts.sortByScore ? players.slice().sort((a,b)=>b.score-a.score) : players;
+  container.innerHTML = '';
+  sorted.forEach(p=>{
+    const chip = document.createElement('span');
+    chip.className = 'mp-chip' + (p.id === mp.playerId ? ' me' : '') + (opts.winnerId && p.id === opts.winnerId ? ' winner' : '');
+    const label = p.id === mp.playerId ? `${p.name}（你）` : p.name;
+    chip.textContent = (opts.showScore === false) ? label : `${label} ${p.score}`;
+    container.appendChild(chip);
+  });
+}
+
+/* ---------- 聊天室 ---------- */
+function mpShowChatWidget(){
+  document.getElementById('mp-chat').style.display = 'block';
+}
+function mpHideChatWidget(){
+  document.getElementById('mp-chat').style.display = 'none';
+  document.getElementById('mp-chat-panel').classList.remove('open');
+  mp.chatOpen = false;
+  mp.chatLastId = 0;
+  mp.chatUnread = 0;
+  document.getElementById('mp-chat-messages').innerHTML = '';
+  updateChatBadge();
+}
+function updateChatBadge(){
+  const badge = document.getElementById('mp-chat-badge');
+  if(mp.chatUnread > 0){
+    badge.style.display = 'flex';
+    badge.textContent = mp.chatUnread > 9 ? '9+' : String(mp.chatUnread);
+  } else {
+    badge.style.display = 'none';
+  }
+}
+document.getElementById('mp-chat-toggle').addEventListener('click', ()=>{
+  mp.chatOpen = !mp.chatOpen;
+  document.getElementById('mp-chat-panel').classList.toggle('open', mp.chatOpen);
+  if(mp.chatOpen){
+    mp.chatUnread = 0;
+    updateChatBadge();
+    const box = document.getElementById('mp-chat-messages');
+    box.scrollTop = box.scrollHeight;
+  }
+});
+document.getElementById('mp-chat-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const input = document.getElementById('mp-chat-input');
+  const text = input.value.trim();
+  if(!text || !mp.code || !mp.playerId) return;
+  input.value = '';
+  try{
+    await fetch('/api/send-chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, text })
+    });
+  }catch(err){ console.warn('send-chat failed', err); }
+});
+function mpRenderChat(messages){
+  if(!messages || !messages.length) return;
+  const box = document.getElementById('mp-chat-messages');
+  const newest = messages[messages.length-1].id;
+  if(newest <= mp.chatLastId) return;
+  messages.forEach(m=>{
+    if(m.id <= mp.chatLastId) return;
+    const row = document.createElement('div');
+    row.className = 'mp-chat-msg' + (m.playerId === mp.playerId ? ' me' : '');
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = m.playerId === mp.playerId ? '你' : m.name;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = m.text;
+    row.appendChild(who);
+    row.appendChild(bubble);
+    box.appendChild(row);
+    if(m.playerId !== mp.playerId && !mp.chatOpen) mp.chatUnread++;
+  });
+  mp.chatLastId = newest;
+  updateChatBadge();
+  if(mp.chatOpen) box.scrollTop = box.scrollHeight;
+}
+
+document.getElementById('go-mp-btn').addEventListener('click', ()=>{
+  showScreen('screen-mp-menu');
+  fetch('/api/server-info').then(r=>r.json()).then(info=>{
+    const url = (info.ok && info.lanIp) ? `http://${info.lanIp}:${info.port}/index.html` : location.origin + '/index.html';
+    mp.shareUrl = url;
+  }).catch(()=>{ mp.shareUrl = location.origin + '/index.html'; });
+});
+document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> showScreen('screen-start'));
+
+document.getElementById('mp-create-btn').addEventListener('click', createRoom);
+
+async function createRoom(){
+  const name = document.getElementById('mp-name').value.trim();
+  try{
+    const res = await fetch('/api/create-room', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if(!data.ok){ alert('建立房間失敗，請再試一次'); return; }
+    mp.code = data.code;
+    mp.playerId = data.playerId;
+    mp.name = data.name;
+    showScreen('screen-mp-lobby');
+    document.getElementById('mp-lobby-code').textContent = data.code;
+    document.getElementById('mp-lobby-share').style.display = '';
+    document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + '/index.html');
+    document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
+    document.getElementById('mp-lobby-diffpick').style.display = 'none';
+    mpShowChatWidget();
+    mpStartPolling();
+  }catch(err){
+    alert('連不上伺服器，請確認伺服器（_serve.ps1）有在執行');
+  }
+}
+
+async function startMpGame(diffKey){
+  let songIds, clipSeconds, starts;
+  if(diffKey === 'random'){
+    const questions = buildRandomQuestions();
+    songIds = questions.map(q=>q.song.id);
+    clipSeconds = questions.map(q=>q.clipSeconds);
+    starts = questions.map(q=>q.song.start);
+  } else {
+    const diff = DIFFICULTIES[diffKey];
+    const pool = shuffle(eraPool());
+    const picked = pool.slice(0, diff.questionCount);
+    songIds = picked.map(s=>s.id);
+    clipSeconds = picked.map(()=> diff.clipSeconds);
+    starts = picked.map(s=>segmentStartFor(s, diffKey));
+  }
+  try{
+    await fetch('/api/start-game', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, diffKey, songIds, clipSeconds, starts })
+    });
+  }catch(err){
+    alert('連不上伺服器');
+  }
+}
+
+document.querySelectorAll('[data-mpstartdiff]').forEach(btn=>{
+  btn.addEventListener('click', ()=> startMpGame(btn.dataset.mpstartdiff));
+});
+
+document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
+  const code = document.getElementById('mp-join-code').value.trim();
+  const errEl = document.getElementById('mp-join-error');
+  errEl.textContent = '';
+  if(!/^\d{4}$/.test(code)){ errEl.textContent = '請輸入 4 位數字房號'; return; }
+  const name = document.getElementById('mp-name').value.trim();
+  try{
+    const res = await fetch('/api/join-room', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code, name })
+    });
+    const data = await res.json();
+    if(!data.ok){
+      errEl.textContent = data.error === 'room full' ? '房間已滿'
+        : data.error === 'already started' ? '這個房間已經開始遊戲了'
+        : '找不到這個房號';
+      return;
+    }
+    mp.code = code;
+    mp.playerId = data.playerId;
+    mp.name = data.name;
+    showScreen('screen-mp-lobby');
+    document.getElementById('mp-lobby-code').textContent = code;
+    document.getElementById('mp-lobby-share').style.display = 'none';
+    document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇難度…';
+    document.getElementById('mp-lobby-diffpick').style.display = 'none';
+    mpShowChatWidget();
+    mpStartPolling();
+  }catch(err){
+    errEl.textContent = '連不上伺服器';
+  }
+});
+
+function mpLeaveRoom(){
+  mpStopPolling();
+  if(mp.code && mp.playerId){
+    fetch('/api/leave-room', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId })
+    }).catch(()=>{});
+  }
+  mp.code = null;
+  mp.playerId = null;
+  try{ ytPlayer.pauseVideo(); }catch(err){}
+  mpHideChatWidget();
+  showScreen('screen-start');
+}
+
+document.getElementById('mp-lobby-leave-btn').addEventListener('click', mpLeaveRoom);
+
+document.getElementById('mp-result-lobby-btn').addEventListener('click', async ()=>{
+  try{ ytPlayer.pauseVideo(); }catch(err){}
+  try{
+    await fetch('/api/return-to-lobby', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code })
+    });
+  }catch(err){}
+  document.getElementById('mp-lobby-code').textContent = mp.code;
+  document.getElementById('mp-lobby-share').style.display = mp.isHost ? '' : 'none';
+  document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + '/index.html');
+  document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
+  document.getElementById('mp-lobby-diffpick').style.display = 'none';
+  showScreen('screen-mp-lobby');
+  mpStartPolling();
+});
+
+function mpStartPolling(){
+  mpStopPolling();
+  mp.lastPhase = null;
+  mp.currentPhase = null;
+  mp.lastIndex = -1;
+  mp.answered = false;
+  mpPollTick();
+  mp.pollTimer = setInterval(mpPollTick, 700);
+}
+
+function mpStopPolling(){
+  if(mp.pollTimer){ clearInterval(mp.pollTimer); mp.pollTimer = null; }
+  if(mp.countdownTimer){ clearInterval(mp.countdownTimer); mp.countdownTimer = null; }
+}
+
+async function mpPollTick(){
+  if(!mp.code) return;
+  let d;
+  try{
+    const res = await fetch(`/api/room-state?code=${mp.code}`);
+    d = await res.json();
+  }catch(err){ return; }
+  if(!d.ok){
+    mpStopPolling();
+    alert('房間已消失或連線中斷，回到選單');
+    mp.code = null;
+    mpHideChatWidget();
+    showScreen('screen-mp-menu');
+    return;
+  }
+  mpHandleState(d);
+}
+
+function mpHandleState(d){
+  const isHost = (mp.playerId === d.hostPlayerId);
+  mp.isHost = isHost;
+  mp.currentPhase = d.phase;
+  mpRenderChat(d.chat);
+
+  if(d.phase === 'lobby'){
+    mpRenderPlayerChips(document.getElementById('mp-lobby-players'), d.players, { showScore:false });
+    if(isHost){
+      if(d.players.length >= 2){
+        document.getElementById('mp-lobby-status').textContent = `已有 ${d.players.length} 人！選一個難度開始遊戲`;
+        document.getElementById('mp-lobby-diffpick').style.display = '';
+      } else {
+        document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
+        document.getElementById('mp-lobby-diffpick').style.display = 'none';
+      }
+    } else {
+      document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇難度…';
+    }
+    return;
+  }
+
+  if(!document.getElementById('screen-game').classList.contains('active')){
+    enterMpGameScreen();
+  }
+
+  document.getElementById('hud-progress').textContent = `第 ${d.index+1} / ${d.total} 題`;
+  document.getElementById('hud-diff').textContent = `房號 ${mp.code}`;
+  document.getElementById('hud-score').textContent = '';
+  const scoreboard = document.getElementById('mp-scoreboard-row');
+  scoreboard.style.display = 'flex';
+  mpRenderPlayerChips(scoreboard, d.players, { sortByScore:true, winnerId: d.phase==='revealed' ? d.lastRoundWinnerId : null });
+
+  if(d.phase === 'finished'){
+    mpStopPolling();
+    try{ ytPlayer.pauseVideo(); }catch(err){}
+    mpShowFinal(d);
+    return;
+  }
+
+  const questionChanged = (d.index !== mp.lastIndex);
+  if(questionChanged){
+    mp.lastIndex = d.index;
+    mp.answered = false;
+    mpLoadQuestionUI(d);
+  }
+
+  if(d.phase !== mp.lastPhase){
+    mp.lastPhase = d.phase;
+    if(d.phase === 'countdown'){
+      mpRunCountdown(d.clipSeconds);
+    } else if(d.phase === 'revealed'){
+      mpShowRoundResult(d);
+    }
+  }
+}
+
+function enterMpGameScreen(){
+  showScreen('screen-game');
+  document.getElementById('skip-btn').style.display = 'none';
+  document.getElementById('next-wrap').style.display = 'none';
+  document.getElementById('hud-score').style.display = 'none';
+  document.getElementById('mp-scoreboard-row').style.display = 'flex';
+}
+
+function mpLoadQuestionUI(d){
+  if(mp.countdownTimer){ clearInterval(mp.countdownTimer); mp.countdownTimer = null; }
+  stopProgressLoop();
+  state.answered = false;
+  state.clipElapsedMs = 0;
+
+  const stage = document.getElementById('record-stage');
+  stage.classList.remove('revealed');
+  const vinyl = document.getElementById('vinyl');
+  vinyl.style.transition = 'none';
+  vinyl.classList.remove('opened');
+  vinyl.classList.remove('spinning');
+  void vinyl.offsetWidth;
+  vinyl.style.transition = '';
+
+  const baseSong = SONGS.find(s => s.id === d.correctSongId);
+  const song = Object.assign({}, baseSong, { start: d.start });
+  document.getElementById('cover-img').src = `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg`;
+  document.getElementById('playback-status').style.display = '';
+  document.getElementById('play-hint').textContent = `片段長度 ${d.clipSeconds} 秒`;
+  resetClipBar();
+
+  cueSong(song);
+  mpRenderChoices(song);
+  document.getElementById('choices').style.display = 'none';
+}
+
+function mpRenderChoices(correctSong){
+  const others = shuffle(eraPool().filter(s => s.id !== correctSong.id)).slice(0,3);
+  const options = shuffle([correctSong, ...others]);
+  const wrap = document.getElementById('choices');
+  wrap.innerHTML = '';
+  options.forEach(song=>{
+    const b = document.createElement('button');
+    b.className = 'choice-btn';
+    b.textContent = song.title;
+    b.addEventListener('click', ()=> mpSubmitAnswer(song, correctSong));
+    wrap.appendChild(b);
+  });
+}
+
+function mpRunCountdown(clipSeconds){
+  let n = 3;
+  const label = document.getElementById('play-btn');
+  label.textContent = String(n);
+  document.getElementById('play-hint').textContent = `即將自動播放…${n}`;
+  beep(660, 0.12);
+  mp.countdownTimer = setInterval(()=>{
+    n--;
+    if(n > 0){
+      label.textContent = String(n);
+      document.getElementById('play-hint').textContent = `即將自動播放…${n}`;
+      beep(660, 0.12);
+    } else {
+      clearInterval(mp.countdownTimer);
+      mp.countdownTimer = null;
+      beep(1046, 0.18);
+      mpBeginAudible(clipSeconds);
+    }
+  }, 1000);
+}
+
+function mpBeginAudible(clipSeconds){
+  try{ ytPlayer.unMute(); ytPlayer.setVolume(100); ytPlayer.playVideo(); }catch(err){ console.warn(err); }
+  document.getElementById('choices').style.display = 'grid';
+  setPlayingUI(true);
+  document.getElementById('play-hint').textContent = `片段長度 ${clipSeconds} 秒 · 搶答中…`;
+  state.questions = [{ song:null, clipSeconds }];
+  state.index = 0;
+  state.clipElapsedMs = 0;
+  startProgressLoop();
+}
+
+async function mpSubmitAnswer(chosenSong, correctSong){
+  if(mp.answered) return;
+  if(mp.currentPhase !== 'playing'){
+    // 還在倒數、片段還沒開始播放，先不接受作答（伺服器這時也不會收），
+    // 不然畫面會被鎖住卻沒有真的送出答案，變成要空等到片段結束
+    document.getElementById('play-hint').textContent = '⏳ 還沒開始，等片段播放再選';
+    return;
+  }
+  mp.answered = true;
+  document.querySelectorAll('.choice-btn').forEach(b=>{
+    b.disabled = true;
+    if(b.textContent === chosenSong.title){
+      b.classList.add(chosenSong.id === correctSong.id ? 'correct' : 'wrong');
+    }
+  });
+  document.getElementById('play-hint').textContent = '已送出答案，等待對方…';
+  try{
+    await fetch('/api/submit-answer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, songId: chosenSong.id })
+    });
+  }catch(err){ console.warn('submit-answer failed', err); }
+}
+
+function mpShowRoundResult(d){
+  stopProgressLoop();
+  const song = SONGS.find(s => s.id === d.correctSongId);
+  document.getElementById('choices').style.display = 'grid';
+  revealVinyl(song);
+
+  document.querySelectorAll('.choice-btn').forEach(b=>{
+    b.disabled = true;
+    if(b.textContent === song.title) b.classList.add('correct');
+  });
+
+  let msg;
+  if(!d.lastRoundWinnerId) msg = '😅 大家都沒答對';
+  else if(d.lastRoundWinnerId === mp.playerId) msg = '🎉 你搶到了這一題！';
+  else msg = `${d.lastRoundWinnerName} 搶到了這一題`;
+  document.getElementById('play-hint').textContent = msg;
+}
+
+function mpShowFinal(d){
+  showScreen('screen-mp-result');
+  const ranked = d.players.slice().sort((a,b)=>b.score-a.score);
+  const me = d.players.find(p=>p.id===mp.playerId);
+
+  // 名次計算：分數相同名次也相同（例如 1、1、3），跟正式比賽排名規則一樣
+  const rankOf = [];
+  ranked.forEach((p,i)=>{
+    rankOf.push(i>0 && p.score===ranked[i-1].score ? rankOf[i-1] : i+1);
+  });
+  const myRank = me ? rankOf[ranked.findIndex(p=>p.id===mp.playerId)] : null;
+
+  let title;
+  if(d.players.length === 2){
+    title = (ranked[0].score === ranked[1].score) ? '平手！' : (myRank === 1 ? '🎉 第一名！' : '第二名');
+  } else {
+    title = (myRank === 1) ? '🎉 第 1 名！' : `第 ${myRank} 名`;
+  }
+  document.getElementById('mp-result-title').textContent = title;
+  document.getElementById('mp-result-sub').textContent = `你的成績：${me ? me.score : 0} 分`;
+
+  const list = document.getElementById('mp-result-list');
+  list.innerHTML = '';
+  ranked.forEach((p, i)=>{
+    const row = document.createElement('div');
+    row.className = 'result-row' + (p.id === mp.playerId ? ' correct' : '');
+    row.innerHTML = `
+      <div><div class="rt">第 ${rankOf[i]} 名　${p.name}${p.id===mp.playerId ? '（你）' : ''}</div></div>
+      <div class="mark">${p.score} 分</div>
+    `;
+    list.appendChild(row);
+  });
+}
+</script>
+</body>
+</html>

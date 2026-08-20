@@ -1087,7 +1087,15 @@ function onPlayerError(e){
   state.errorRetryCount = (state.errorRetryCount || 0) + 1;
   if(state.errorRetryCount <= 2 && q && q.song && !state.answered){
     console.warn('[猜歌遊戲] YouTube player error', e.data, '正在自動重試第', state.errorRetryCount, '次');
-    setTimeout(()=>{ if(!state.answered) cueSong(q.song); }, 500);
+    // 如果錯誤發生在已經要開始播放（取消靜音）之後，重新 cue 完不會自動再播一次，
+    // 一定要記得再觸發一次「等載入好就播放」，不然重試完影片會卡在靜音、永遠沒聲音
+    // （一般模式因為還有獨立的倒數計時器會自然補救，但計時挑戰沒有倒數，這步不能漏掉）
+    const needsReplay = state.playbackStarted;
+    setTimeout(()=>{
+      if(state.answered) return;
+      cueSong(q.song);
+      if(needsReplay) waitForCueThenPlay();
+    }, 500);
     return;
   }
 
@@ -1232,6 +1240,7 @@ function loadQuestion(){
   state.isPlaying = false;
   state.clipElapsedMs = 0;
   state.errorRetryCount = 0;
+  state.playbackStarted = false;
   const q = state.questions[state.index];
 
   document.getElementById('hud-progress').textContent = `第 ${state.index+1} / ${state.questions.length} 題`;
@@ -1290,6 +1299,7 @@ function renderChoices(correctSong){
 
 /* ===================== 揭曉聲音（取消靜音，不呼叫播放/暫停） ===================== */
 function startPlayback(){
+  state.playbackStarted = true;
   const q = state.questions[state.index];
   clearTimeout(playWatchdog);
   document.getElementById('play-hint').textContent = `片段長度 ${q.clipSeconds} 秒 · 播放中…`;
@@ -1824,6 +1834,7 @@ function mpLoadQuestionUI(d){
   state.answered = false;
   state.clipElapsedMs = 0;
   state.errorRetryCount = 0;
+  state.playbackStarted = false;
 
   const stage = document.getElementById('record-stage');
   stage.classList.remove('revealed');

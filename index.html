@@ -404,8 +404,31 @@
         <div class="meta">4~8 題隨機・每題難度也隨機（簡單/困難/魔王混戰）</div>
       </button>
     </div>
-    <div style="text-align:center; margin-top:18px;">
+    <div style="text-align:center; margin-top:18px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn-main" id="go-timed-btn">⏱️ 計時挑戰</button>
       <button class="btn-main" id="go-mp-btn">🔗 連線對戰</button>
+    </div>
+  </section>
+
+  <!-- 計時挑戰：選題數 -->
+  <section id="screen-timed-select" class="screen">
+    <p style="text-align:center; color:var(--muted); margin:0 0 18px;">選擇題數，比比看你能多快答完全部題目</p>
+    <div class="diff-grid">
+      <button class="diff-card diff-easy" data-timed-count="10">
+        <div class="name">⏱️ 10 題</div>
+        <div class="meta">最佳紀錄：<span id="timed-best-10">尚無紀錄</span></div>
+      </button>
+      <button class="diff-card diff-hard" data-timed-count="20">
+        <div class="name">⏱️ 20 題</div>
+        <div class="meta">最佳紀錄：<span id="timed-best-20">尚無紀錄</span></div>
+      </button>
+      <button class="diff-card diff-random" data-timed-count="30">
+        <div class="name">⏱️ 30 題</div>
+        <div class="meta">最佳紀錄：<span id="timed-best-30">尚無紀錄</span></div>
+      </button>
+    </div>
+    <div style="text-align:center; margin-top:18px;">
+      <button class="btn-ghost" id="timed-back-btn">← 返回</button>
     </div>
   </section>
 
@@ -435,7 +458,7 @@
     <p style="text-align:center; color:var(--muted); margin:0 0 6px;">房號</p>
     <div class="score-big" id="mp-lobby-code">----</div>
     <p style="text-align:center; color:var(--muted); font-size:13px; margin:6px 0 20px;" id="mp-lobby-share">
-      請朋友在同一個 Wi-Fi 下打開：<br>
+      請朋友打開這個網址：<br>
       <span id="mp-lobby-url" style="color:var(--accent2);">-</span><br>
       再輸入這個房號加入
     </p>
@@ -477,6 +500,7 @@
     <div class="hud">
       <span class="pill" id="hud-progress">第 1 / 4 題</span>
       <span class="pill" id="hud-diff">簡單</span>
+      <span class="pill" id="hud-timer" style="display:none;">00:00</span>
       <span class="pill" id="hud-score">分數 0</span>
     </div>
     <div id="mp-scoreboard-row" style="display:none; flex-wrap:wrap; gap:6px; justify-content:center; margin:-6px 0 16px;"></div>
@@ -828,7 +852,7 @@ const SONGS = [
   { id:275, title:"綠光",            artist:"孫燕姿", videoId:"pztQtHvZkRc", start:50, tier:"easy", era:"post90" },
   { id:276, title:"淘汰",            artist:"陳奕迅", videoId:"oXOPKUNetMI", start:50, tier:"easy", era:"post90" },
   { id:277, title:"髮如雪",          artist:"周杰倫", videoId:"Yoea0k2thHY", start:50, tier:"hard", era:"post90" },
-  { id:278, title:"半島鐵盒",        artist:"周杰倫", videoId:"17w04fTYdjo", start:50, tier:"hard", era:"post90" },
+  { id:278, title:"半島鐵盒",        artist:"周杰倫", videoId:"dsUTcSVdU2U", start:50, tier:"hard", era:"post90" },
   { id:279, title:"心跳",            artist:"王力宏", videoId:"d1GjuHisVTk", start:50, tier:"hard", era:"post90" },
   { id:280, title:"遺失的美好",      artist:"張韶涵", videoId:"JA5qoG_OY34", start:50, tier:"hard", era:"post90" },
   { id:281, title:"找自己",          artist:"陶喆",   videoId:"DZf9HdAu0Wg", start:50, tier:"boss", era:"post90" },
@@ -1088,6 +1112,7 @@ document.querySelectorAll('#screen-start .diff-card').forEach(btn=>{
 });
 
 function startGame(diffKey){
+  stopTimedTimer();
   let questions;
   if(diffKey === 'random'){
     questions = buildRandomQuestions();
@@ -1102,9 +1127,75 @@ function startGame(diffKey){
     isPlaying:false, clipElapsedMs:0, rafId:null, lastTickTs:0, countdownTimer:null };
   document.getElementById('hud-diff').textContent = DIFFICULTIES[diffKey].label;
   document.getElementById('hud-score').style.display = '';
+  document.getElementById('hud-timer').style.display = 'none';
   document.getElementById('mp-scoreboard-row').style.display = 'none';
   showScreen('screen-game');
   loadQuestion();
+}
+
+/* ===================== 計時挑戰模式（10/20/30 題測秒數，本機存最佳紀錄） ===================== */
+const TIMED_TIER = 'easy';
+let timedTimerInterval = null;
+
+function stopTimedTimer(){
+  if(timedTimerInterval){ clearInterval(timedTimerInterval); timedTimerInterval = null; }
+}
+function timedRecordKey(count){ return 'timedBest_' + selectedEra + '_' + count; }
+function getTimedBest(count){
+  const v = Number(localStorage.getItem(timedRecordKey(count)));
+  return (v && v > 0) ? v : null;
+}
+function saveTimedBest(count, ms){
+  const cur = getTimedBest(count);
+  if(!cur || ms < cur){ localStorage.setItem(timedRecordKey(count), String(ms)); return true; }
+  return false;
+}
+function formatDuration(ms){
+  if(ms == null) return '尚無紀錄';
+  const totalSec = Math.floor(ms/1000);
+  const m = Math.floor(totalSec/60);
+  const s = totalSec % 60;
+  return (m>0 ? m+'分' : '') + String(s).padStart(m>0?2:1,'0') + '秒';
+}
+function formatClock(ms){
+  const totalSec = Math.floor(ms/1000);
+  const m = Math.floor(totalSec/60);
+  const s = totalSec % 60;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+document.getElementById('go-timed-btn').addEventListener('click', ()=>{
+  [10,20,30].forEach(count=>{
+    document.getElementById('timed-best-'+count).textContent = formatDuration(getTimedBest(count));
+  });
+  showScreen('screen-timed-select');
+});
+document.getElementById('timed-back-btn').addEventListener('click', ()=> showScreen('screen-start'));
+document.querySelectorAll('#screen-timed-select [data-timed-count]').forEach(btn=>{
+  btn.addEventListener('click', ()=> startTimedGame(Number(btn.dataset.timedCount)));
+});
+
+function startTimedGame(count){
+  stopTimedTimer();
+  const pool = shuffle(eraPool());
+  const picked = pool.slice(0, count);
+  const questions = picked.map(song=>({ song: makeQuestionSong(song, TIMED_TIER), clipSeconds: TIER_CLIP_SECONDS[TIMED_TIER] }));
+
+  state = { diffKey:null, questions, index:0, score:0, answered:false, answers:[],
+    isPlaying:false, clipElapsedMs:0, rafId:null, lastTickTs:0, countdownTimer:null,
+    timedMode:true, timedCount:count, timedStartedAt:Date.now(), timedElapsedMs:0, timedIsNewRecord:false };
+
+  document.getElementById('hud-diff').textContent = `⏱️ ${count} 題計時`;
+  document.getElementById('hud-score').style.display = '';
+  document.getElementById('hud-timer').style.display = '';
+  document.getElementById('hud-timer').textContent = '00:00';
+  document.getElementById('mp-scoreboard-row').style.display = 'none';
+  showScreen('screen-game');
+  loadQuestion();
+
+  timedTimerInterval = setInterval(()=>{
+    document.getElementById('hud-timer').textContent = formatClock(Date.now() - state.timedStartedAt);
+  }, 200);
 }
 
 /* ===================== 載入題目 ===================== */
@@ -1143,7 +1234,14 @@ function loadQuestion(){
 
   renderChoices(q.song);
   document.getElementById('choices').style.display = 'none';
-  startCountdown();
+
+  if(state.timedMode){
+    // 計時挑戰全程不倒數，每一題都直接開始播放，節奏才不會被拖慢
+    document.getElementById('play-btn').textContent = '';
+    revealAudio();
+  } else {
+    startCountdown();
+  }
 }
 
 function renderChoices(correctSong){
@@ -1241,6 +1339,8 @@ function resetClipBar(){
 /* ===================== 作答 ===================== */
 function onChoose(chosenSong, correctSong, btnEl){
   if(state.answered) return;
+  const isCorrectPick = !!chosenSong && chosenSong.id === correctSong.id;
+
   state.answered = true;
   document.getElementById('choices').style.display = 'grid';
   stopProgressLoop();
@@ -1253,7 +1353,7 @@ function onChoose(chosenSong, correctSong, btnEl){
   document.getElementById('skip-btn').disabled = true;
   document.getElementById('playback-status').style.display = 'none';
 
-  const isCorrect = !!chosenSong && chosenSong.id === correctSong.id;
+  const isCorrect = isCorrectPick;
   if(isCorrect) state.score++;
 
   document.querySelectorAll('.choice-btn').forEach(b=>{
@@ -1270,6 +1370,13 @@ function onChoose(chosenSong, correctSong, btnEl){
   });
 
   document.getElementById('hud-score').textContent = `分數 ${state.score}`;
+
+  if(state.timedMode && state.index === state.questions.length-1){
+    stopTimedTimer();
+    state.timedElapsedMs = Date.now() - state.timedStartedAt;
+    document.getElementById('hud-timer').textContent = formatClock(state.timedElapsedMs);
+    state.timedIsNewRecord = saveTimedBest(state.timedCount, state.timedElapsedMs);
+  }
 
   revealVinyl(correctSong);
 
@@ -1311,7 +1418,13 @@ function showResult(){
   showScreen('screen-result');
   const total = state.questions.length;
   document.getElementById('result-score').textContent = `${state.score} / ${total}`;
-  document.getElementById('result-sub').textContent = `答對率 ${Math.round(state.score/total*100)}% · 難度：${DIFFICULTIES[state.diffKey].label}`;
+  if(state.timedMode){
+    const best = getTimedBest(state.timedCount);
+    document.getElementById('result-sub').textContent = `⏱️ 完成時間 ${formatClock(state.timedElapsedMs)}` +
+      (state.timedIsNewRecord ? '　🎉 新紀錄！' : `　最佳紀錄 ${formatDuration(best)}`);
+  } else {
+    document.getElementById('result-sub').textContent = `答對率 ${Math.round(state.score/total*100)}% · 難度：${DIFFICULTIES[state.diffKey].label}`;
+  }
 
   const list = document.getElementById('result-list');
   list.innerHTML = '';
@@ -1329,10 +1442,24 @@ function showResult(){
   });
 }
 
-document.getElementById('retry-btn').addEventListener('click', ()=> startGame(state.diffKey));
+document.getElementById('retry-btn').addEventListener('click', ()=>{
+  if(state.timedMode) startTimedGame(state.timedCount);
+  else startGame(state.diffKey);
+});
 document.getElementById('menu-btn').addEventListener('click', ()=> showScreen('screen-start'));
 
 /* ===================== 連線對戰 ===================== */
+// 部署到 GitHub Pages 之類的靜態空間時，連線對戰的 API 要打去 Cloudflare Workers；
+// 但在自己電腦用 _serve.ps1 開（localhost / 127.0.0.1 / 區網 IP）時，還是打本機相對路徑 /api/...
+// 部署完 Worker 後，把下面這行網址換成你自己的 workers.dev 網址（wrangler deploy 完成後終端機會印出來）。
+const CLOUD_API_BASE = "https://guess-song-game-api.YOUR-SUBDOMAIN.workers.dev";
+function isLocalServer(){
+  const h = location.hostname;
+  return location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1'
+    || /^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(h);
+}
+const API_BASE = isLocalServer() ? '' : CLOUD_API_BASE;
+
 let mp = {
   code: null,
   playerId: null,
@@ -1400,7 +1527,7 @@ document.getElementById('mp-chat-form').addEventListener('submit', async (e)=>{
   if(!text || !mp.code || !mp.playerId) return;
   input.value = '';
   try{
-    await fetch('/api/send-chat', {
+    await fetch(API_BASE + '/api/send-chat', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId, text })
     });
@@ -1433,10 +1560,10 @@ function mpRenderChat(messages){
 
 document.getElementById('go-mp-btn').addEventListener('click', ()=>{
   showScreen('screen-mp-menu');
-  fetch('/api/server-info').then(r=>r.json()).then(info=>{
-    const url = (info.ok && info.lanIp) ? `http://${info.lanIp}:${info.port}/index.html` : location.origin + '/index.html';
+  fetch(API_BASE + '/api/server-info').then(r=>r.json()).then(info=>{
+    const url = (info.ok && info.lanIp) ? `http://${info.lanIp}:${info.port}/index.html` : location.origin + location.pathname;
     mp.shareUrl = url;
-  }).catch(()=>{ mp.shareUrl = location.origin + '/index.html'; });
+  }).catch(()=>{ mp.shareUrl = location.origin + location.pathname; });
 });
 document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> showScreen('screen-start'));
 
@@ -1445,7 +1572,7 @@ document.getElementById('mp-create-btn').addEventListener('click', createRoom);
 async function createRoom(){
   const name = document.getElementById('mp-name').value.trim();
   try{
-    const res = await fetch('/api/create-room', {
+    const res = await fetch(API_BASE + '/api/create-room', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name })
     });
     const data = await res.json();
@@ -1456,7 +1583,7 @@ async function createRoom(){
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = data.code;
     document.getElementById('mp-lobby-share').style.display = '';
-    document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + '/index.html');
+    document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + location.pathname);
     document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
     document.getElementById('mp-lobby-diffpick').style.display = 'none';
     mpShowChatWidget();
@@ -1482,7 +1609,7 @@ async function startMpGame(diffKey){
     starts = picked.map(s=>segmentStartFor(s, diffKey));
   }
   try{
-    await fetch('/api/start-game', {
+    await fetch(API_BASE + '/api/start-game', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId, diffKey, songIds, clipSeconds, starts })
     });
@@ -1502,7 +1629,7 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   if(!/^\d{4}$/.test(code)){ errEl.textContent = '請輸入 4 位數字房號'; return; }
   const name = document.getElementById('mp-name').value.trim();
   try{
-    const res = await fetch('/api/join-room', {
+    const res = await fetch(API_BASE + '/api/join-room', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code, name })
     });
@@ -1531,7 +1658,7 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
 function mpLeaveRoom(){
   mpStopPolling();
   if(mp.code && mp.playerId){
-    fetch('/api/leave-room', {
+    fetch(API_BASE + '/api/leave-room', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId })
     }).catch(()=>{});
@@ -1548,14 +1675,14 @@ document.getElementById('mp-lobby-leave-btn').addEventListener('click', mpLeaveR
 document.getElementById('mp-result-lobby-btn').addEventListener('click', async ()=>{
   try{ ytPlayer.pauseVideo(); }catch(err){}
   try{
-    await fetch('/api/return-to-lobby', {
+    await fetch(API_BASE + '/api/return-to-lobby', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code })
     });
   }catch(err){}
   document.getElementById('mp-lobby-code').textContent = mp.code;
   document.getElementById('mp-lobby-share').style.display = mp.isHost ? '' : 'none';
-  document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + '/index.html');
+  document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + location.pathname);
   document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
   document.getElementById('mp-lobby-diffpick').style.display = 'none';
   showScreen('screen-mp-lobby');
@@ -1581,7 +1708,7 @@ async function mpPollTick(){
   if(!mp.code) return;
   let d;
   try{
-    const res = await fetch(`/api/room-state?code=${mp.code}`);
+    const res = await fetch(`${API_BASE}/api/room-state?code=${mp.code}`);
     d = await res.json();
   }catch(err){ return; }
   if(!d.ok){
@@ -1653,6 +1780,8 @@ function mpHandleState(d){
 }
 
 function enterMpGameScreen(){
+  stopTimedTimer();
+  document.getElementById('hud-timer').style.display = 'none';
   showScreen('screen-game');
   document.getElementById('skip-btn').style.display = 'none';
   document.getElementById('next-wrap').style.display = 'none';
@@ -1750,7 +1879,7 @@ async function mpSubmitAnswer(chosenSong, correctSong){
   });
   document.getElementById('play-hint').textContent = '已送出答案，等待對方…';
   try{
-    await fetch('/api/submit-answer', {
+    await fetch(API_BASE + '/api/submit-answer', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId, songId: chosenSong.id })
     });

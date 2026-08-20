@@ -1007,6 +1007,20 @@ function revealAudio(retries){
   startPlayback();
 }
 
+// 計時挑戰用：用播放器實際狀態判斷影片是否已經吃進去（不是還沒開始的 -1），
+// 而不是用固定的等待時間，這樣第一首歌（播放器冷啟動、載入較久）跟後面幾首都能適應
+function waitForCueThenPlay(deadline){
+  deadline = deadline || (Date.now() + 2000);
+  if(state.answered) return;
+  let st = -1;
+  try{ st = ytPlayer.getPlayerState(); }catch(err){}
+  if(st !== -1 || Date.now() >= deadline){
+    revealAudio();
+  } else {
+    setTimeout(()=>waitForCueThenPlay(deadline), 80);
+  }
+}
+
 /* ===================== YouTube IFrame API ===================== */
 window.onYouTubeIframeAPIReady = function(){
   ytPlayer = new YT.Player('yt-player', {
@@ -1248,11 +1262,12 @@ function loadQuestion(){
   document.getElementById('choices').style.display = 'none';
 
   if(state.timedMode){
-    // 計時挑戰全程不倒數，但完全不等待的話會搶在 cueVideoById 剛送出、影片還沒真正載入前
-    // 就呼叫 playVideo()，導致播放器卡住沒反應（沒有倒數原本順便給的那幾秒緩衝時間）。
-    // 所以還是留一個很短的緩衝（遠比 3 秒倒數短），讓影片先真的載入好。
+    // 計時挑戰全程不倒數，但完全不等待會搶在 cueVideoById 剛送出、影片還沒真正載入前
+    // 就呼叫 playVideo()，導致播放器卡住沒反應。第一首歌是播放器「冷啟動」，
+    // 載入時間比後面幾首明顯更久，固定等一個短時間不夠用，所以改成用播放器實際狀態判斷
+    // （只要不是還沒開始的 -1 狀態就代表已經吃到新影片），最多等 2 秒保底。
     document.getElementById('play-btn').textContent = '';
-    setTimeout(revealAudio, 350);
+    waitForCueThenPlay();
   } else {
     startCountdown();
   }

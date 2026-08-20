@@ -1010,7 +1010,12 @@ function revealAudio(retries){
 // 計時挑戰用：用播放器實際狀態判斷影片是否已經吃進去（不是還沒開始的 -1），
 // 而不是用固定的等待時間，這樣第一首歌（播放器冷啟動、載入較久）跟後面幾首都能適應
 function waitForCueThenPlay(deadline){
-  deadline = deadline || (Date.now() + 2000);
+  if(deadline === undefined){
+    // 第一次呼叫：cueVideoById 剛送出，讀取的狀態可能還是上一首歌殘留的舊值（還沒真正生效），
+    // 先等一小段時間讓它真的更新，不要在同一個 tick 就去判斷
+    setTimeout(()=>waitForCueThenPlay(Date.now() + 2000), 120);
+    return;
+  }
   if(state.answered) return;
   let st = -1;
   try{ st = ytPlayer.getPlayerState(); }catch(err){}
@@ -1310,7 +1315,18 @@ function startPlayback(){
   } else {
     // 靜音預播還沒真正開始（可能還在緩衝），先確保有呼叫播放，等 onPlayerStateChange 確認後再取消靜音
     awaitingPlayStart = true;
-    try{ ytPlayer.playVideo(); }catch(err){ console.warn('playVideo failed', err); }
+    nudgePlayVideo(0);
+  }
+}
+
+// 只呼叫一次 playVideo() 有時候會被吃掉（尤其是剛切換到新影片、上一首的狀態還沒完全清乾淨的時候），
+// 所以改成每 1.5 秒重新喊一次播放，喊到真的開始播放或到達重試上限才放棄
+function nudgePlayVideo(attempt){
+  if(!awaitingPlayStart) return;
+  try{ ytPlayer.playVideo(); }catch(err){ console.warn('playVideo failed', err); }
+  if(attempt < 4){
+    playWatchdog = setTimeout(()=> nudgePlayVideo(attempt + 1), 1500);
+  } else {
     playWatchdog = setTimeout(()=>{
       if(awaitingPlayStart){
         awaitingPlayStart = false;
@@ -1318,7 +1334,7 @@ function startPlayback(){
           document.getElementById('play-hint').textContent = '⚠️ 播放似乎卡住了，請確認網路連線正常，或按「跳過」直接看答案';
         }
       }
-    }, 6000);
+    }, 1500);
   }
 }
 

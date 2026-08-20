@@ -1066,9 +1066,20 @@ function onPlayerError(e){
   clearTimeout(playWatchdog);
   stopProgressLoop();
   setPlayingUI(false);
+
+  // YouTube 的 IFrame API 偶爾會在剛切歌／剛初始化時丟出一次性的假錯誤（尤其是錯誤碼 2），
+  // 重新 cue 一次通常就會恢復正常，所以先靜默重試幾次，真的一直失敗才顯示錯誤訊息給玩家看
+  const q = state.questions[state.index];
+  state.errorRetryCount = (state.errorRetryCount || 0) + 1;
+  if(state.errorRetryCount <= 2 && q && q.song && !state.answered){
+    console.warn('[猜歌遊戲] YouTube player error', e.data, '正在自動重試第', state.errorRetryCount, '次');
+    setTimeout(()=>{ if(!state.answered) cueSong(q.song); }, 500);
+    return;
+  }
+
   const detail = YT_ERROR_MESSAGES[e.data] || ('未知錯誤代碼 ' + e.data);
   document.getElementById('play-hint').textContent = `⚠️ 播放失敗：${detail}（錯誤碼 ${e.data}）。請用下方「跳過」看答案`;
-  console.error('[猜歌遊戲] YouTube player error', e.data, '目前題目 videoId =', state.questions[state.index] && state.questions[state.index].song.videoId);
+  console.error('[猜歌遊戲] YouTube player error', e.data, '目前題目 videoId =', q && q.song && q.song.videoId);
 }
 
 function cueSong(song){
@@ -1206,6 +1217,7 @@ function loadQuestion(){
   awaitingPlayStart = false;
   state.isPlaying = false;
   state.clipElapsedMs = 0;
+  state.errorRetryCount = 0;
   const q = state.questions[state.index];
 
   document.getElementById('hud-progress').textContent = `第 ${state.index+1} / ${state.questions.length} 題`;
@@ -1794,6 +1806,7 @@ function mpLoadQuestionUI(d){
   stopProgressLoop();
   state.answered = false;
   state.clipElapsedMs = 0;
+  state.errorRetryCount = 0;
 
   const stage = document.getElementById('record-stage');
   stage.classList.remove('revealed');

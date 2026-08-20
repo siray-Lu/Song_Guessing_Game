@@ -1053,6 +1053,27 @@ window.onYouTubeIframeAPIReady = function(){
   setTimeout(()=>{ if(!ytReady) showApiWarning(); }, 6000);
 })();
 
+// 瀏覽器的自動播放政策要求「使用者手勢」之後才允許出聲。玩家在選單上的第一次點擊
+// 就是合法的手勢，趁這個時機先叫播放器解鎖音訊，第一首歌才不會被瀏覽器擋成靜音。
+(function unlockAudioOnFirstGesture(){
+  let done = false;
+  function unlock(){
+    if(done) return;
+    done = true;
+    document.removeEventListener('pointerdown', unlock, true);
+    document.removeEventListener('keydown', unlock, true);
+    try{
+      if(ytPlayer && ytPlayer.unMute){
+        ytPlayer.unMute();
+        ytPlayer.setVolume(100);
+        ytPlayer.mute(); // 立刻靜音回去，避免在選單上就發出聲音；權限已經拿到了
+      }
+    }catch(err){}
+  }
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+})();
+
 function showApiWarning(){
   const el = document.getElementById('api-warning');
   if(el) el.style.display = 'block';
@@ -1343,6 +1364,28 @@ function unmuteAndGo(){
   document.getElementById('choices').style.display = 'grid';
   setPlayingUI(true);
   if(!state.rafId) startProgressLoop();
+  // 瀏覽器的自動播放政策：整個頁面第一次「把聲音打開」時，很可能會被擋下來，
+  // 甚至直接把影片暫停掉（第二首之後因為網站已經累積播放紀錄就會放行，
+  // 這正是「只有第一首沒聲音」的典型症狀）。所以這裡回頭驗證有沒有真的成功，
+  // 沒成功就再試一次。
+  verifyAudible(0);
+}
+
+function verifyAudible(attempt){
+  if(attempt > 5) return;
+  setTimeout(()=>{
+    if(state.answered || !state.playbackStarted) return;
+    let st = null, muted = true;
+    try{ st = ytPlayer.getPlayerState(); muted = ytPlayer.isMuted(); }catch(err){ return; }
+    const playing = (st === YT.PlayerState.PLAYING);
+    if(playing && !muted) return; // 真的有聲音在播了，收工
+    console.warn('[猜歌遊戲] 聲音沒有成功打開（state=' + st + ', muted=' + muted + '），重試第 ' + (attempt+1) + ' 次');
+    try{
+      if(muted){ ytPlayer.unMute(); ytPlayer.setVolume(100); }
+      if(!playing){ ytPlayer.playVideo(); }
+    }catch(err){}
+    verifyAudible(attempt + 1);
+  }, 400);
 }
 
 function setPlayingUI(isPlaying){

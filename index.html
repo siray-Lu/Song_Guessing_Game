@@ -1248,9 +1248,11 @@ function loadQuestion(){
   document.getElementById('choices').style.display = 'none';
 
   if(state.timedMode){
-    // 計時挑戰全程不倒數，每一題都直接開始播放，節奏才不會被拖慢
+    // 計時挑戰全程不倒數，但完全不等待的話會搶在 cueVideoById 剛送出、影片還沒真正載入前
+    // 就呼叫 playVideo()，導致播放器卡住沒反應（沒有倒數原本順便給的那幾秒緩衝時間）。
+    // 所以還是留一個很短的緩衝（遠比 3 秒倒數短），讓影片先真的載入好。
     document.getElementById('play-btn').textContent = '';
-    revealAudio();
+    setTimeout(revealAudio, 350);
   } else {
     startCountdown();
   }

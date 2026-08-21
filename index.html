@@ -1228,11 +1228,13 @@ function stopSilentAudio(){
   try{ if(silentAudioEl) silentAudioEl.pause(); }catch(err){}
 }
 
-// 答案揭曉後就不用再遮了，正常顯示歌名
-function unmaskMediaSession(song){
+// 答案揭曉後停止補蓋，但「不」把真實歌名寫進媒體控制列：
+// 系統的媒體控制列（例如 Windows 音量列）不見得會即時刷新，之前寫進去的歌名可能
+// 一直殘留到下一題，看起來會很混亂。答案在遊戲畫面上就看得到了，這裡固定維持
+// 遮蔽文字最單純也最安全。
+function unmaskMediaSession(){
   mediaMaskTimers.forEach(clearTimeout);
   mediaMaskTimers = [];
-  setMediaSessionInfo(song.title, song.artist, MEDIA_ART_PLACEHOLDER);
 }
 
 function cueSong(song){
@@ -1618,7 +1620,7 @@ function onChoose(chosenSong, correctSong, btnEl){
 }
 
 function revealVinyl(correctSong){
-  unmaskMediaSession(correctSong); // 答案已揭曉，系統媒體控制列可以正常顯示歌名了
+  unmaskMediaSession(); // 答案已揭曉，停止補蓋（媒體控制列固定維持遮蔽文字，避免殘留）
   document.getElementById('vinyl').classList.add('opened');
   document.getElementById('reveal-title').textContent = correctSong.title;
   document.getElementById('reveal-artist').textContent = correctSong.artist;

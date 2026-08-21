@@ -412,18 +412,21 @@
 
   <!-- 計時挑戰：選題數 -->
   <section id="screen-timed-select" class="screen">
-    <p style="text-align:center; color:var(--muted); margin:0 0 18px;">選擇題數，比比看你能多快答完全部題目</p>
+    <p style="text-align:center; color:var(--muted); margin:0 0 18px;">
+      比比看你能多快答對指定題數<br>
+      <span style="font-size:12px;">答錯或跳過都不算，音樂會一直播到你作答為止</span>
+    </p>
     <div class="diff-grid">
       <button class="diff-card diff-easy" data-timed-count="10">
-        <div class="name">⏱️ 10 題</div>
+        <div class="name">⏱️ 答對 10 題</div>
         <div class="meta">最佳紀錄：<span id="timed-best-10">尚無紀錄</span></div>
       </button>
       <button class="diff-card diff-hard" data-timed-count="20">
-        <div class="name">⏱️ 20 題</div>
+        <div class="name">⏱️ 答對 20 題</div>
         <div class="meta">最佳紀錄：<span id="timed-best-20">尚無紀錄</span></div>
       </button>
       <button class="diff-card diff-random" data-timed-count="30">
-        <div class="name">⏱️ 30 題</div>
+        <div class="name">⏱️ 答對 30 題</div>
         <div class="meta">最佳紀錄：<span id="timed-best-30">尚無紀錄</span></div>
       </button>
     </div>
@@ -1092,6 +1095,10 @@ function onPlayerStateChange(e){
     clearTimeout(playWatchdog);
     unmuteAndGo();
   }
+  // 計時挑戰沒有片段長度限制，所以要靠「整首歌播完」這個事件來收尾
+  if(e.data === YT.PlayerState.ENDED && state.timedMode && state.playbackStarted && !state.answered){
+    onClipLimitReached();
+  }
 }
 
 const YT_ERROR_MESSAGES = {
@@ -1234,17 +1241,26 @@ document.querySelectorAll('#screen-timed-select [data-timed-count]').forEach(btn
   btn.addEventListener('click', ()=> startTimedGame(Number(btn.dataset.timedCount)));
 });
 
+// 計時挑戰的題目是「答對才算」，所以題數不固定（答錯會一直補新題目上來），
+// 用一個洗好牌的佇列依序供題，抽完就重新洗一輪，避免同一輪裡一直重複同幾首歌
+function nextTimedQuestion(){
+  if(!state.timedQueue || state.timedQueue.length === 0){
+    state.timedQueue = shuffle(eraPool());
+  }
+  const song = state.timedQueue.pop();
+  return { song: makeQuestionSong(song, TIMED_TIER), clipSeconds: TIER_CLIP_SECONDS[TIMED_TIER] };
+}
+
 function startTimedGame(count){
   stopTimedTimer();
-  const pool = shuffle(eraPool());
-  const picked = pool.slice(0, count);
-  const questions = picked.map(song=>({ song: makeQuestionSong(song, TIMED_TIER), clipSeconds: TIER_CLIP_SECONDS[TIMED_TIER] }));
 
-  state = { diffKey:null, questions, index:0, score:0, answered:false, answers:[],
+  state = { diffKey:null, questions:[], index:0, score:0, answered:false, answers:[],
     isPlaying:false, clipElapsedMs:0, rafId:null, lastTickTs:0, countdownTimer:null,
-    timedMode:true, timedCount:count, timedStartedAt:Date.now(), timedElapsedMs:0, timedIsNewRecord:false };
+    timedMode:true, timedCount:count, timedStartedAt:Date.now(), timedElapsedMs:0, timedIsNewRecord:false,
+    timedQueue: shuffle(eraPool()) };
+  state.questions.push(nextTimedQuestion());
 
-  document.getElementById('hud-diff').textContent = `⏱️ ${count} 題計時`;
+  document.getElementById('hud-diff').textContent = `⏱️ 答對 ${count} 題`;
   document.getElementById('hud-score').style.display = '';
   document.getElementById('hud-timer').style.display = '';
   document.getElementById('hud-timer').textContent = '00:00';
@@ -1269,8 +1285,13 @@ function loadQuestion(){
   state.playbackStarted = false;
   const q = state.questions[state.index];
 
-  document.getElementById('hud-progress').textContent = `第 ${state.index+1} / ${state.questions.length} 題`;
+  // 計時挑戰是「答對才算」，所以進度顯示答對數，不是第幾題（按了答案不會加）
+  document.getElementById('hud-progress').textContent = state.timedMode
+    ? `已答對 ${state.score} / ${state.timedCount}`
+    : `第 ${state.index+1} / ${state.questions.length} 題`;
   document.getElementById('hud-score').textContent = `分數 ${state.score}`;
+  // 計時挑戰不限制片段長度，進度條沒有意義就不顯示
+  document.querySelector('.clip-bar').style.display = state.timedMode ? 'none' : '';
   document.getElementById('next-wrap').style.display = 'none';
 
   const stage = document.getElementById('record-stage');
@@ -1395,6 +1416,10 @@ function setPlayingUI(isPlaying){
 }
 
 function startProgressLoop(){
+  // 計時挑戰不限制片段長度：音樂一路播到玩家選答案、按跳過，或整首歌播完為止
+  // （整首播完是靠 onPlayerStateChange 的 ENDED 事件處理）
+  if(state.timedMode) return;
+
   const q = state.questions[state.index];
   const totalMs = q.clipSeconds * 1000;
   const fill = document.getElementById('clip-bar-fill');
@@ -1424,7 +1449,9 @@ function onClipLimitReached(){
   try{ ytPlayer.mute(); }catch(err){}
   setPlayingUI(false);
   if(!state.answered){
-    document.getElementById('play-hint').textContent = '片段播完囉，選一個答案，或按「跳過」看答案';
+    document.getElementById('play-hint').textContent = state.timedMode
+      ? '整首歌播完囉，選一個答案，或按「跳過」'
+      : '片段播完囉，選一個答案，或按「跳過」看答案';
   }
 }
 
@@ -1469,18 +1496,24 @@ function onChoose(chosenSong, correctSong, btnEl){
 
   document.getElementById('hud-score').textContent = `分數 ${state.score}`;
 
-  if(state.timedMode && state.index === state.questions.length-1){
-    stopTimedTimer();
-    state.timedElapsedMs = Date.now() - state.timedStartedAt;
-    document.getElementById('hud-timer').textContent = formatClock(state.timedElapsedMs);
-    state.timedIsNewRecord = saveTimedBest(state.timedCount, state.timedElapsedMs);
+  // 計時挑戰：只有答對才會推進進度（答錯／跳過都不算），答滿目標題數才結束
+  const timedFinished = state.timedMode && state.score >= state.timedCount;
+  if(state.timedMode){
+    document.getElementById('hud-progress').textContent = `已答對 ${state.score} / ${state.timedCount}`;
+    if(timedFinished){
+      stopTimedTimer();
+      state.timedElapsedMs = Date.now() - state.timedStartedAt;
+      document.getElementById('hud-timer').textContent = formatClock(state.timedElapsedMs);
+      state.timedIsNewRecord = saveTimedBest(state.timedCount, state.timedElapsedMs);
+    }
   }
 
   revealVinyl(correctSong);
 
   document.getElementById('next-wrap').style.display = 'block';
   const nextBtn = document.getElementById('next-btn');
-  nextBtn.textContent = (state.index === state.questions.length-1) ? '查看結果 →' : '下一題 →';
+  const isLast = state.timedMode ? timedFinished : (state.index === state.questions.length-1);
+  nextBtn.textContent = isLast ? '查看結果 →' : '下一題 →';
 }
 
 function revealVinyl(correctSong){
@@ -1504,6 +1537,16 @@ document.getElementById('skip-btn').addEventListener('click', ()=>{
 /* ===================== 下一題 / 結果 ===================== */
 document.getElementById('next-btn').addEventListener('click', ()=>{
   if(ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
+
+  if(state.timedMode){
+    // 答滿目標題數才結束；還沒答滿就一直補新題目上來（答錯／跳過都不算數）
+    if(state.score >= state.timedCount){ showResult(); return; }
+    state.index++;
+    if(state.index >= state.questions.length) state.questions.push(nextTimedQuestion());
+    loadQuestion();
+    return;
+  }
+
   state.index++;
   if(state.index >= state.questions.length){
     showResult();
@@ -1518,7 +1561,8 @@ function showResult(){
   document.getElementById('result-score').textContent = `${state.score} / ${total}`;
   if(state.timedMode){
     const best = getTimedBest(state.timedCount);
-    document.getElementById('result-sub').textContent = `⏱️ 完成時間 ${formatClock(state.timedElapsedMs)}` +
+    document.getElementById('result-sub').textContent =
+      `⏱️ 完成時間 ${formatClock(state.timedElapsedMs)}　（答對 ${state.score} 題，共作答 ${total} 題）` +
       (state.timedIsNewRecord ? '　🎉 新紀錄！' : `　最佳紀錄 ${formatDuration(best)}`);
   } else {
     document.getElementById('result-sub').textContent = `答對率 ${Math.round(state.score/total*100)}% · 難度：${DIFFICULTIES[state.diffKey].label}`;
@@ -1894,6 +1938,10 @@ function mpLoadQuestionUI(d){
   state.clipElapsedMs = 0;
   state.errorRetryCount = 0;
   state.playbackStarted = false;
+  // 連線對戰是直接沿用同一個 state 物件（不像單人是整個重建），
+  // 如果上一輪玩的是計時挑戰，殘留的 timedMode 會讓片段進度條整個失效，所以要清掉
+  state.timedMode = false;
+  document.querySelector('.clip-bar').style.display = '';
 
   const stage = document.getElementById('record-stage');
   stage.classList.remove('revealed');

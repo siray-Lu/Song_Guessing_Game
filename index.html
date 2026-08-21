@@ -425,9 +425,13 @@
         <div class="name">⏱️ 答對 20 題</div>
         <div class="meta">最佳紀錄：<span id="timed-best-20">尚無紀錄</span></div>
       </button>
-      <button class="diff-card diff-random" data-timed-count="30">
+      <button class="diff-card diff-boss" data-timed-count="30">
         <div class="name">⏱️ 答對 30 題</div>
         <div class="meta">最佳紀錄：<span id="timed-best-30">尚無紀錄</span></div>
+      </button>
+      <button class="diff-card diff-random" data-timed-count="40" style="grid-column:auto;">
+        <div class="name">⏱️ 答對 40 題</div>
+        <div class="meta">最佳紀錄：<span id="timed-best-40">尚無紀錄</span></div>
       </button>
     </div>
     <div style="text-align:center; margin-top:18px;">
@@ -1231,7 +1235,7 @@ function formatClock(ms){
 }
 
 document.getElementById('go-timed-btn').addEventListener('click', ()=>{
-  [10,20,30].forEach(count=>{
+  [10,20,30,40].forEach(count=>{
     document.getElementById('timed-best-'+count).textContent = formatDuration(getTimedBest(count));
   });
   showScreen('screen-timed-select');

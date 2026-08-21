@@ -1214,7 +1214,7 @@ function maskMediaSession(){
   ensureSilentAudio();
   const apply = ()=>{
     try{ if(silentAudioEl.paused) silentAudioEl.play().catch(()=>{}); }catch(err){}
-    setMediaSessionInfo('🎵 ？？？', '猜猜這是哪首歌', MEDIA_ART_PLACEHOLDER);
+    setMediaSessionInfo('🎵黑膠猜歌🎵', '自己想不要看答案', MEDIA_ART_PLACEHOLDER);
   };
   apply();
   [200, 600, 1200, 2000, 3000, 4500, 6500].forEach(ms=>{

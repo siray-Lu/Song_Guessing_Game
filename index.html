@@ -1141,7 +1141,55 @@ function onPlayerError(e){
   console.error('[猜歌遊戲] YouTube player error', e.data, '目前題目 videoId =', q && q.song && q.song.videoId);
 }
 
+/* ===================== 遮蔽系統媒體控制列的歌名（避免爆雷） =====================
+   YouTube 的播放器會透過 Media Session API 把影片標題／縮圖報給作業系統，
+   玩家按音量鍵時系統就會跳出媒體控制列，直接把答案顯示出來。
+   這裡在最外層文件自己設定一組假的 metadata 蓋掉它（外層設定的優先權高於 iframe），
+   並且在切歌後重複補設幾次，因為 YouTube 載入新影片時會再蓋回去。
+======================================================= */
+const MEDIA_ART_PLACEHOLDER =
+  'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">' +
+    '<rect width="512" height="512" fill="#1a1030"/>' +
+    '<circle cx="256" cy="256" r="228" fill="#161018"/>' +
+    '<circle cx="256" cy="256" r="150" fill="none" stroke="#241a33" stroke-width="10"/>' +
+    '<circle cx="256" cy="256" r="88" fill="#ff5fa2"/>' +
+    '<circle cx="256" cy="256" r="30" fill="#fdf4fb"/></svg>'
+  );
+let mediaMaskTimers = [];
+
+function setMediaSessionInfo(title, artist, artwork){
+  if(!('mediaSession' in navigator)) return;
+  try{
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: title,
+      artist: artist,
+      album: '黑膠猜歌',
+      artwork: [{ src: artwork, sizes: '512x512', type: 'image/svg+xml' }]
+    });
+  }catch(err){}
+}
+
+// 蓋住歌名。YouTube 會在影片載入的不同階段重設 metadata，所以要連續補設幾次才蓋得住。
+function maskMediaSession(){
+  mediaMaskTimers.forEach(clearTimeout);
+  mediaMaskTimers = [];
+  const apply = ()=> setMediaSessionInfo('🎵 ？？？', '猜猜這是哪首歌', MEDIA_ART_PLACEHOLDER);
+  apply();
+  [200, 600, 1200, 2000, 3000, 4500].forEach(ms=>{
+    mediaMaskTimers.push(setTimeout(apply, ms));
+  });
+}
+
+// 答案揭曉後就不用再遮了，正常顯示歌名
+function unmaskMediaSession(song){
+  mediaMaskTimers.forEach(clearTimeout);
+  mediaMaskTimers = [];
+  setMediaSessionInfo(song.title, song.artist, MEDIA_ART_PLACEHOLDER);
+}
+
 function cueSong(song){
+  maskMediaSession();
   const opts = { videoId: song.videoId, startSeconds: song.start };
   if(ytReady && ytPlayer && ytPlayer.cueVideoById){
     primeSong(opts);
@@ -1386,6 +1434,8 @@ function nudgePlayVideo(attempt){
 
 function unmuteAndGo(){
   try{ ytPlayer.unMute(); ytPlayer.setVolume(100); }catch(err){ console.warn('unMute failed', err); }
+  // 真正開始出聲的這一刻 YouTube 會再寫一次媒體資訊，還沒作答的話要立刻蓋回去，免得爆雷
+  if(!state.answered) maskMediaSession();
   document.getElementById('choices').style.display = 'grid';
   setPlayingUI(true);
   if(!state.rafId) startProgressLoop();
@@ -1521,6 +1571,7 @@ function onChoose(chosenSong, correctSong, btnEl){
 }
 
 function revealVinyl(correctSong){
+  unmaskMediaSession(correctSong); // 答案已揭曉，系統媒體控制列可以正常顯示歌名了
   document.getElementById('vinyl').classList.add('opened');
   document.getElementById('reveal-title').textContent = correctSong.title;
   document.getElementById('reveal-artist').textContent = correctSong.artist;

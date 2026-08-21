@@ -1602,6 +1602,14 @@ function isLocalServer(){
 }
 const API_BASE = isLocalServer() ? '' : CLOUD_API_BASE;
 
+// GitHub Pages 是純靜態空間，沒有後端可以管房間，連線對戰在那邊不會動，所以直接把入口藏起來。
+// 其他地方（自己電腦的伺服器、區網、Cloudflare Tunnel）都照常顯示。
+(function hideMultiplayerOnGithubPages(){
+  if(!/\.github\.io$/.test(location.hostname)) return;
+  const btn = document.getElementById('go-mp-btn');
+  if(btn) btn.style.display = 'none';
+})();
+
 let mp = {
   code: null,
   playerId: null,

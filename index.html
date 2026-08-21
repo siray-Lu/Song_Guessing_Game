@@ -1076,6 +1076,11 @@ window.onYouTubeIframeAPIReady = function(){
         ytPlayer.mute(); // 立刻靜音回去，避免在選單上就發出聲音；權限已經拿到了
       }
     }catch(err){}
+    // 無聲音訊也趁這個手勢先播起來，之後才有權限用它接管系統媒體控制列
+    try{
+      ensureSilentAudio();
+      silentAudioEl.play().then(()=>{ silentAudioEl.pause(); }).catch(()=>{});
+    }catch(err){}
   }
   document.addEventListener('pointerdown', unlock, true);
   document.addEventListener('keydown', unlock, true);
@@ -1157,6 +1162,36 @@ const MEDIA_ART_PLACEHOLDER =
     '<circle cx="256" cy="256" r="30" fill="#fdf4fb"/></svg>'
   );
 let mediaMaskTimers = [];
+let silentAudioEl = null;
+
+// 系統的媒體控制列是跟著「實際在播音訊的那個框架」走的，所以光是在外層網頁設定
+// metadata 沒有用（那是 YouTube iframe 自己的 session）。這裡讓外層網頁自己也播一段
+// 無聲音訊，把媒體控制列的所有權搶過來，我們設定的資訊才會真的顯示在系統上。
+function makeSilentWavUrl(seconds){
+  const sampleRate = 8000;
+  const numSamples = sampleRate * seconds;
+  const buf = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buf);
+  const put = (off, s)=>{ for(let i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); };
+  put(0,'RIFF');  view.setUint32(4, 36 + numSamples*2, true);
+  put(8,'WAVE');  put(12,'fmt ');
+  view.setUint32(16, 16, true);   view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);    view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate*2, true);
+  view.setUint16(32, 2, true);    view.setUint16(34, 16, true);
+  put(36,'data'); view.setUint32(40, numSamples*2, true);
+  // 樣本資料全部留 0 就是無聲
+  return URL.createObjectURL(new Blob([buf], { type:'audio/wav' }));
+}
+
+function ensureSilentAudio(){
+  if(silentAudioEl) return;
+  silentAudioEl = document.createElement('audio');
+  silentAudioEl.src = makeSilentWavUrl(2);
+  silentAudioEl.loop = true;
+  silentAudioEl.setAttribute('playsinline', '');
+  document.body.appendChild(silentAudioEl);
+}
 
 function setMediaSessionInfo(title, artist, artwork){
   if(!('mediaSession' in navigator)) return;
@@ -1167,18 +1202,30 @@ function setMediaSessionInfo(title, artist, artwork){
       album: '黑膠猜歌',
       artwork: [{ src: artwork, sizes: '512x512', type: 'image/svg+xml' }]
     });
+    navigator.mediaSession.playbackState = 'playing';
   }catch(err){}
 }
 
-// 蓋住歌名。YouTube 會在影片載入的不同階段重設 metadata，所以要連續補設幾次才蓋得住。
+// 蓋住歌名。YouTube 會在影片載入的不同階段重設 metadata，所以要連續補設幾次才蓋得住；
+// 同時把無聲音訊播起來，確保系統採用的是我們這一份資訊而不是 YouTube 的。
 function maskMediaSession(){
   mediaMaskTimers.forEach(clearTimeout);
   mediaMaskTimers = [];
-  const apply = ()=> setMediaSessionInfo('🎵 ？？？', '猜猜這是哪首歌', MEDIA_ART_PLACEHOLDER);
+  ensureSilentAudio();
+  const apply = ()=>{
+    try{ if(silentAudioEl.paused) silentAudioEl.play().catch(()=>{}); }catch(err){}
+    setMediaSessionInfo('🎵 ？？？', '猜猜這是哪首歌', MEDIA_ART_PLACEHOLDER);
+  };
   apply();
-  [200, 600, 1200, 2000, 3000, 4500].forEach(ms=>{
+  [200, 600, 1200, 2000, 3000, 4500, 6500].forEach(ms=>{
     mediaMaskTimers.push(setTimeout(apply, ms));
   });
+}
+
+function stopSilentAudio(){
+  mediaMaskTimers.forEach(clearTimeout);
+  mediaMaskTimers = [];
+  try{ if(silentAudioEl) silentAudioEl.pause(); }catch(err){}
 }
 
 // 答案揭曉後就不用再遮了，正常顯示歌名
@@ -1611,6 +1658,7 @@ document.getElementById('next-btn').addEventListener('click', ()=>{
 });
 
 function showResult(){
+  stopSilentAudio(); // 遊戲結束，把系統媒體控制列的所有權放掉
   showScreen('screen-result');
   const total = state.questions.length;
   document.getElementById('result-score').textContent = `${state.score} / ${total}`;

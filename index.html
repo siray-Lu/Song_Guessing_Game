@@ -378,6 +378,9 @@
         <div class="meta">70 年代到現在通通有機會出現</div>
       </button>
     </div>
+    <div style="text-align:center; margin-top:18px;">
+      <button class="btn-main" id="go-mp-btn">🔗 連線對戰</button>
+    </div>
   </section>
 
   <!-- 難度選擇畫面 -->
@@ -404,9 +407,8 @@
         <div class="meta">4~8 題隨機・每題難度也隨機（簡單/困難/魔王混戰）</div>
       </button>
     </div>
-    <div style="text-align:center; margin-top:18px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+    <div style="text-align:center; margin-top:18px;">
       <button class="btn-main" id="go-timed-btn">⏱️ 計時挑戰</button>
-      <button class="btn-main" id="go-mp-btn">🔗 連線對戰</button>
     </div>
   </section>
 
@@ -2127,7 +2129,8 @@ const API_BASE = isLocalServer() ? '' : CLOUD_API_BASE;
 (function hideMultiplayerOnGithubPages(){
   if(!/\.github\.io$/.test(location.hostname)) return;
   const btn = document.getElementById('go-mp-btn');
-  if(btn) btn.style.display = 'none';
+  // 連按鈕外面那層置中的容器一起藏，不然年代選擇畫面下面會留一塊空白
+  if(btn) (btn.parentElement || btn).style.display = 'none';
 })();
 
 let mp = {
@@ -2235,7 +2238,7 @@ document.getElementById('go-mp-btn').addEventListener('click', ()=>{
     mp.shareUrl = url;
   }).catch(()=>{ mp.shareUrl = location.origin + location.pathname; });
 });
-document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> showScreen('screen-start'));
+document.getElementById('mp-menu-back-btn').addEventListener('click', ()=> showScreen('screen-era'));
 
 document.getElementById('mp-create-btn').addEventListener('click', createRoom);
 
@@ -2337,7 +2340,7 @@ function mpLeaveRoom(){
   mp.playerId = null;
   try{ ytPlayer.pauseVideo(); }catch(err){}
   mpHideChatWidget();
-  showScreen('screen-start');
+  showScreen('screen-era');
 }
 
 document.getElementById('mp-lobby-leave-btn').addEventListener('click', mpLeaveRoom);

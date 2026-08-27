@@ -474,7 +474,17 @@
     <p style="text-align:center;" id="mp-lobby-status">⏳ 等待對方加入…</p>
     <div id="mp-lobby-players" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:12px 0;"></div>
 
-    <div id="mp-lobby-diffpick" class="diff-grid" style="display:none; margin-top:16px;">
+    <div id="mp-lobby-erapick" style="display:none; margin-top:16px;">
+      <p style="text-align:center; color:var(--muted); font-size:13px; margin:0 0 8px;">① 出題年代</p>
+      <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+        <button class="btn-ghost mp-era-btn" data-mpera="pre90" style="margin-left:0;">🕰️ 懷舊金曲</button>
+        <button class="btn-ghost mp-era-btn" data-mpera="post90" style="margin-left:0;">🎧 千禧新聲</button>
+        <button class="btn-ghost mp-era-btn" data-mpera="mixed" style="margin-left:0;">🎲 大亂鬥</button>
+      </div>
+      <p style="text-align:center; color:var(--muted); font-size:13px; margin:16px 0 0;">② 選難度就開始</p>
+    </div>
+
+    <div id="mp-lobby-diffpick" class="diff-grid" style="display:none; margin-top:10px;">
       <button class="diff-card diff-easy" data-mpstartdiff="easy">
         <div class="name">🟢 簡單</div><div class="meta">4 題・每段 10 秒</div>
       </button>
@@ -2252,7 +2262,7 @@ async function createRoom(){
     document.getElementById('mp-lobby-share').style.display = '';
     document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + location.pathname);
     document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
-    document.getElementById('mp-lobby-diffpick').style.display = 'none';
+    mpShowHostControls(false);
     mpShowChatWidget();
     mpStartPolling();
   }catch(err){
@@ -2289,6 +2299,29 @@ document.querySelectorAll('[data-mpstartdiff]').forEach(btn=>{
   btn.addEventListener('click', ()=> startMpGame(btn.dataset.mpstartdiff));
 });
 
+/* 連線對戰是從第一頁直接進來的，還沒經過年代選擇畫面，
+   所以房主要在房間裡挑年代（出題的歌單是房主決定的）。 */
+function mpRenderEraPick(){
+  document.querySelectorAll('[data-mpera]').forEach(b=>{
+    const on = b.dataset.mpera === selectedEra;
+    b.style.borderColor = on ? 'var(--accent2)' : '';
+    b.style.color       = on ? 'var(--accent2)' : '';
+    b.style.fontWeight  = on ? '700' : '';
+  });
+}
+document.querySelectorAll('[data-mpera]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    selectedEra = btn.dataset.mpera;
+    document.getElementById('era-label').textContent = ERA_LABELS[selectedEra];
+    mpRenderEraPick();
+  });
+});
+function mpShowHostControls(show){
+  document.getElementById('mp-lobby-erapick').style.display  = show ? '' : 'none';
+  document.getElementById('mp-lobby-diffpick').style.display = show ? '' : 'none';
+  if(show) mpRenderEraPick();
+}
+
 document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   const code = document.getElementById('mp-join-code').value.trim();
   const errEl = document.getElementById('mp-join-error');
@@ -2313,8 +2346,8 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = code;
     document.getElementById('mp-lobby-share').style.display = 'none';
-    document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇難度…';
-    document.getElementById('mp-lobby-diffpick').style.display = 'none';
+    document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇年代與難度…';
+    mpShowHostControls(false);
     mpShowChatWidget();
     mpStartPolling();
   }catch(err){
@@ -2351,7 +2384,7 @@ document.getElementById('mp-result-lobby-btn').addEventListener('click', async (
   document.getElementById('mp-lobby-share').style.display = mp.isHost ? '' : 'none';
   document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + location.pathname);
   document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
-  document.getElementById('mp-lobby-diffpick').style.display = 'none';
+  mpShowHostControls(false);
   showScreen('screen-mp-lobby');
   mpStartPolling();
 });
@@ -2399,14 +2432,14 @@ function mpHandleState(d){
     mpRenderPlayerChips(document.getElementById('mp-lobby-players'), d.players, { showScore:false });
     if(isHost){
       if(d.players.length >= 2){
-        document.getElementById('mp-lobby-status').textContent = `已有 ${d.players.length} 人！選一個難度開始遊戲`;
-        document.getElementById('mp-lobby-diffpick').style.display = '';
+        document.getElementById('mp-lobby-status').textContent = `已有 ${d.players.length} 人！選年代和難度開始遊戲`;
+        mpShowHostControls(true);
       } else {
         document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
-        document.getElementById('mp-lobby-diffpick').style.display = 'none';
+        mpShowHostControls(false);
       }
     } else {
-      document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇難度…';
+      document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇年代與難度…';
     }
     return;
   }

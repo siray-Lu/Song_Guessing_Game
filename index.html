@@ -2116,7 +2116,7 @@ document.getElementById('menu-btn').addEventListener('click', ()=> showScreen('s
 // 部署到 GitHub Pages 之類的靜態空間時，連線對戰的 API 要打去 Cloudflare Workers；
 // 但在自己電腦用 _serve.ps1 開（localhost / 127.0.0.1 / 區網 IP）時，還是打本機相對路徑 /api/...
 // 部署完 Worker 後，把下面這行網址換成你自己的 workers.dev 網址（wrangler deploy 完成後終端機會印出來）。
-const CLOUD_API_BASE = "https://guess-song-game-api.YOUR-SUBDOMAIN.workers.dev";
+const CLOUD_API_BASE = "https://guess-song-game-api.siray.workers.dev";
 function isLocalServer(){
   const h = location.hostname;
   return location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1'
@@ -2124,14 +2124,8 @@ function isLocalServer(){
 }
 const API_BASE = isLocalServer() ? '' : CLOUD_API_BASE;
 
-// GitHub Pages 是純靜態空間，沒有後端可以管房間，連線對戰在那邊不會動，所以直接把入口藏起來。
-// 其他地方（自己電腦的伺服器、區網、Cloudflare Tunnel）都照常顯示。
-(function hideMultiplayerOnGithubPages(){
-  if(!/\.github\.io$/.test(location.hostname)) return;
-  const btn = document.getElementById('go-mp-btn');
-  // 連按鈕外面那層置中的容器一起藏，不然年代選擇畫面下面會留一塊空白
-  if(btn) (btn.parentElement || btn).style.display = 'none';
-})();
+// 房間邏輯放在 Cloudflare Workers（CLOUD_API_BASE），GitHub Pages 這種純靜態空間
+// 也能靠它連線對戰，所以入口一律顯示，不再需要隱藏。
 
 let mp = {
   code: null,

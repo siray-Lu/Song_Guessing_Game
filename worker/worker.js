@@ -51,6 +51,12 @@ export default {
       return json({ ok: false, error: "could not allocate room code" }, 500);
     }
 
+    // 這個要擺在通用的 /api/ 分支前面，否則會被當成「沒帶房號」直接回 400。
+    // 雲端版沒有區網 IP 可以分享，回 null 讓前端改用目前網址當分享連結。
+    if (path === "/api/server-info") {
+      return json({ ok: true, lanIp: null, port: null, cloud: true });
+    }
+
     if (path.startsWith("/api/")) {
       let code = url.searchParams.get("code");
       let bodyText = null;
@@ -69,10 +75,6 @@ export default {
       const res = await stub.fetch("https://do" + path + url.search, forwardInit);
       const data = await res.json().catch(() => ({ ok: false, error: "bad upstream response" }));
       return json(data, res.status);
-    }
-
-    if (path === "/api/server-info") {
-      return json({ ok: true, lanIp: null, port: null, cloud: true });
     }
 
     return json({ ok: false, error: "not found" }, 404);

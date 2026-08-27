@@ -8,4 +8,6 @@ class_name = "RoomDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RoomDO"]
+# 免費方案只支援 SQLite 版的 Durable Objects，一定要用 new_sqlite_classes，
+# 用 new_classes 會被擋下來說要付費方案。
+new_sqlite_classes = ["RoomDO"]

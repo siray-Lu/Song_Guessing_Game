@@ -1,2 +1,4 @@
 cloudflared.exe
 *.log
+worker/node_modules/
+worker/.wrangler/

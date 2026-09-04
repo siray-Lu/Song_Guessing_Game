@@ -2507,6 +2507,19 @@ function mpHandleState(d){
   mpRenderChat(d.chat);
 
   if(d.phase === 'lobby'){
+    // 房主結算完按了「回到房間」，還停在結算或遊戲畫面的人要自動跟著回來，
+    // 不然他們會一直卡在舊畫面，房主開下一局也不知道。
+    if(!document.getElementById('screen-mp-lobby').classList.contains('active')){
+      try{ ytPlayer.pauseVideo(); }catch(err){}
+      document.getElementById('mp-lobby-code').textContent = mp.code;
+      document.getElementById('mp-lobby-share').style.display = isHost ? '' : 'none';
+      document.getElementById('mp-lobby-url').textContent = mp.shareUrl || (location.origin + location.pathname);
+      mpShowChatWidget();
+      showScreen('screen-mp-lobby');
+    }
+    mp.lastPhase = 'lobby';
+    mp.lastIndex = -1;
+    mp.answered = false;
     mpRenderPlayerChips(document.getElementById('mp-lobby-players'), d.players, { showScore:false });
     if(isHost){
       if(d.players.length >= 2){
@@ -2522,6 +2535,19 @@ function mpHandleState(d){
     return;
   }
 
+  // 結算要擺在切回遊戲畫面之前判斷，否則因為現在會持續輪詢，
+  // 下面那段每跑一次就把畫面從結算拉回遊戲畫面。
+  if(d.phase === 'finished'){
+    // 這裡刻意不停止輪詢：停了之後房主重開一局，還停在結算畫面的人就完全收不到消息，
+    // 會被卡在上一局的結算畫面進不去（心跳也會斷掉，最後還被當成離線清除）。
+    if(mp.lastPhase !== 'finished'){
+      mp.lastPhase = 'finished';
+      try{ ytPlayer.pauseVideo(); }catch(err){}
+      mpShowFinal(d);
+    }
+    return;
+  }
+
   if(!document.getElementById('screen-game').classList.contains('active')){
     enterMpGameScreen();
   }
@@ -2532,13 +2558,6 @@ function mpHandleState(d){
   const scoreboard = document.getElementById('mp-scoreboard-row');
   scoreboard.style.display = 'flex';
   mpRenderPlayerChips(scoreboard, d.players, { sortByScore:true, winnerId: d.phase==='revealed' ? d.lastRoundWinnerId : null });
-
-  if(d.phase === 'finished'){
-    mpStopPolling();
-    try{ ytPlayer.pauseVideo(); }catch(err){}
-    mpShowFinal(d);
-    return;
-  }
 
   const questionChanged = (d.index !== mp.lastIndex);
   if(questionChanged){

@@ -322,6 +322,11 @@ export class RoomDO {
     }
 
     if (path === "/api/return-to-lobby") {
+      // 只有在上一局已經結束時才能重置房間。
+      // 否則上一局卡在結算畫面的人按下「回到房間」，會把別人正在玩的這一局整個洗掉。
+      if (room.phase !== "finished") {
+        return this.json(this.publicState());
+      }
       room.phase = "lobby";
       room.phaseStartedAt = this.now();
       room.index = 0;

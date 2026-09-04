@@ -286,6 +286,7 @@ while ($listener.IsListening) {
                 Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
             } else {
                 $room = $rooms[$code]
+                Touch-Player $room $playerId
                 Advance-RoomPhase $room
                 if ($room.phase -eq 'playing' -and $room.players.ContainsKey($playerId) -and -not $room.answers.ContainsKey($playerId)) {
                     $atMs = (Now-Ms) - $room.phaseStartedAt
@@ -303,15 +304,19 @@ while ($listener.IsListening) {
                 Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
             } else {
                 $room = $rooms[$code]
-                $room.phase = 'lobby'
-                $room.phaseStartedAt = (Now-Ms)
-                $room.index = 0
-                $room.songIds = @()
-                $room.clipSeconds = @()
-                $room.starts = @()
-                $room.answers = @{}
-                $room.lastRoundWinnerId = $null
-                foreach ($playerKey in @($room.players.Keys)) { $room.players[$playerKey].score = 0 }
+                # Only allow a reset once the previous game is over. Otherwise someone still
+                # sitting on the old result screen can wipe the game everyone else is playing.
+                if ($room.phase -eq 'finished') {
+                    $room.phase = 'lobby'
+                    $room.phaseStartedAt = (Now-Ms)
+                    $room.index = 0
+                    $room.songIds = @()
+                    $room.clipSeconds = @()
+                    $room.starts = @()
+                    $room.answers = @{}
+                    $room.lastRoundWinnerId = $null
+                    foreach ($playerKey in @($room.players.Keys)) { $room.players[$playerKey].score = 0 }
+                }
                 Write-JsonResponse $res (Room-PublicState $room)
             }
         }

@@ -105,6 +105,7 @@
     border-color:var(--accent2);
     font-weight:700;
   }
+  .mp-chip.ready{ color:var(--green); border-color:#4ade8055; }
   .mp-chip.winner{
     border-color:var(--green);
   }
@@ -517,6 +518,10 @@
     </p>
     <p style="text-align:center;" id="mp-lobby-status">⏳ 等待對方加入…</p>
     <div id="mp-lobby-players" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:12px 0;"></div>
+
+    <div class="actions-center" id="mp-ready-wrap" style="display:none; margin-top:4px;">
+      <button class="btn-main" id="mp-ready-btn">✅ 準備完成</button>
+    </div>
 
     <div id="mp-lobby-erapick" style="display:none; margin-top:16px;">
       <p style="text-align:center; color:var(--muted); font-size:13px; margin:0 0 8px;">① 出題年代</p>
@@ -2204,7 +2209,14 @@ function mpRenderPlayerChips(container, players, opts){
     const chip = document.createElement('span');
     chip.className = 'mp-chip' + (p.id === mp.playerId ? ' me' : '') + (opts.winnerId && p.id === opts.winnerId ? ' winner' : '');
     const label = p.id === mp.playerId ? `${p.name}（你）` : p.name;
-    chip.textContent = (opts.showScore === false) ? label : `${label} ${p.score}`;
+    if(opts.showReady){
+      // 房主不用按準備，直接標成房主
+      const mark = (p.id === opts.hostId) ? '👑' : (p.ready ? '✅' : '⏳');
+      chip.textContent = `${mark} ${label}`;
+      if(p.ready || p.id === opts.hostId) chip.classList.add('ready');
+    } else {
+      chip.textContent = (opts.showScore === false) ? label : `${label} ${p.score}`;
+    }
     container.appendChild(chip);
   });
 }
@@ -2331,10 +2343,14 @@ async function startMpGame(diffKey){
     starts = picked.map(s=>segmentStartFor(s, diffKey));
   }
   try{
-    await fetch(API_BASE + '/api/start-game', {
+    const res = await fetch(API_BASE + '/api/start-game', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId, diffKey, songIds, clipSeconds, starts })
     });
+    const d = await res.json();
+    if(d && d.ok === false && d.error === 'not everyone is ready'){
+      alert('還有人沒按「準備完成」，等大家準備好再開始');
+    }
   }catch(err){
     alert('連不上伺服器');
   }
@@ -2361,6 +2377,21 @@ document.querySelectorAll('[data-mpera]').forEach(btn=>{
     mpRenderEraPick();
   });
 });
+document.getElementById('mp-ready-btn').addEventListener('click', async ()=>{
+  if(!mp.code || !mp.playerId) return;
+  const next = !mp.ready;
+  mp.ready = next; // 先反應在畫面上，不用等下一次輪詢
+  document.getElementById('mp-ready-btn').textContent = next ? '↩️ 取消準備' : '✅ 準備完成';
+  try{
+    const res = await fetch(API_BASE + '/api/set-ready', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ code: mp.code, playerId: mp.playerId, ready: next })
+    });
+    const d = await res.json();
+    if(d.ok) mpHandleState(d);
+  }catch(err){}
+});
+
 function mpShowHostControls(show){
   document.getElementById('mp-lobby-erapick').style.display  = show ? '' : 'none';
   document.getElementById('mp-lobby-diffpick').style.display = show ? '' : 'none';
@@ -2520,17 +2551,38 @@ function mpHandleState(d){
     mp.lastPhase = 'lobby';
     mp.lastIndex = -1;
     mp.answered = false;
-    mpRenderPlayerChips(document.getElementById('mp-lobby-players'), d.players, { showScore:false });
+    mpRenderPlayerChips(document.getElementById('mp-lobby-players'), d.players,
+      { showScore:false, showReady:true, hostId:d.hostPlayerId });
+
+    const me = d.players.find(p=>p.id === mp.playerId);
+    mp.ready = !!(me && me.ready);
+    const others = d.players.filter(p=>p.id !== d.hostPlayerId);
+    const readyCount = others.filter(p=>p.ready).length;
+
+    // 房主不用按準備（他選難度開始就等於準備好了），所以只有其他人看得到準備按鈕
+    const readyWrap = document.getElementById('mp-ready-wrap');
+    const readyBtn = document.getElementById('mp-ready-btn');
+    readyWrap.style.display = isHost ? 'none' : '';
+    readyBtn.textContent = mp.ready ? '↩️ 取消準備' : '✅ 準備完成';
+    readyBtn.classList.toggle('btn-ghost', mp.ready);
+    readyBtn.classList.toggle('btn-main', !mp.ready);
+
     if(isHost){
-      if(d.players.length >= 2){
-        document.getElementById('mp-lobby-status').textContent = `已有 ${d.players.length} 人！選年代和難度開始遊戲`;
-        mpShowHostControls(true);
-      } else {
+      if(d.players.length < 2){
         document.getElementById('mp-lobby-status').textContent = '⏳ 等待其他人加入…';
         mpShowHostControls(false);
+      } else if(!d.allReady){
+        document.getElementById('mp-lobby-status').textContent =
+          `⏳ 等待大家按下準備完成（${readyCount} / ${others.length}）`;
+        mpShowHostControls(false);
+      } else {
+        document.getElementById('mp-lobby-status').textContent = '全員準備完成！選年代和難度開始遊戲';
+        mpShowHostControls(true);
       }
     } else {
-      document.getElementById('mp-lobby-status').textContent = '⏳ 已加入，等待房主選擇年代與難度…';
+      document.getElementById('mp-lobby-status').textContent = mp.ready
+        ? (d.allReady ? '✅ 全員準備完成，等房主開始…' : `✅ 已準備，等其他人（${readyCount} / ${others.length}）`)
+        : '請按下「準備完成」';
     }
     return;
   }

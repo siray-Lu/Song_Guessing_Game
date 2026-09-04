@@ -51,6 +51,20 @@ function Remove-GhostPlayers {
     }
 }
 
+# The host does not press ready - picking a difficulty is their "go". Only the others count.
+function Test-EveryoneReady {
+    param($room)
+    $others = @($room.players.Keys | Where-Object { $_ -ne $room.hostPlayerId })
+    if ($others.Count -eq 0) { return $false }
+    foreach ($id in $others) { if (-not $room.players[$id].ready) { return $false } }
+    return $true
+}
+
+function Clear-ReadyFlags {
+    param($room)
+    foreach ($id in @($room.players.Keys)) { $room.players[$id].ready = $false }
+}
+
 function Touch-Player {
     param($room, $playerId)
     if ($playerId -and $room.players.ContainsKey($playerId)) {
@@ -128,7 +142,7 @@ function Room-PublicState($room) {
     $playersOut = @($room.players.Keys | ForEach-Object {
         $playerKey = $_
         $p = $room.players[$playerKey]
-        @{ id = $playerKey; name = $p.name; score = $p.score; answered = $room.answers.ContainsKey($playerKey) }
+        @{ id = $playerKey; name = $p.name; score = $p.score; ready = [bool]$p.ready; answered = $room.answers.ContainsKey($playerKey) }
     })
     $winnerName = $null
     if ($room.lastRoundWinnerId -and $room.players.ContainsKey($room.lastRoundWinnerId)) {
@@ -146,6 +160,7 @@ function Room-PublicState($room) {
         phaseStartedAt = $room.phaseStartedAt
         serverNow = (Now-Ms)
         hostPlayerId = $room.hostPlayerId
+        allReady = (Test-EveryoneReady $room)
         players = $playersOut
         lastRoundWinnerId = $room.lastRoundWinnerId
         lastRoundWinnerName = $winnerName
@@ -194,7 +209,7 @@ while ($listener.IsListening) {
             $room = @{
                 code = $code
                 hostPlayerId = $playerId
-                players = @{ $playerId = @{ name = $name; score = 0; lastSeen = (Now-Ms) } }
+                players = @{ $playerId = @{ name = $name; score = 0; ready = $false; lastSeen = (Now-Ms) } }
                 nextPlayerNum = 2
                 diffKey = $null
                 songIds = @()
@@ -235,7 +250,7 @@ while ($listener.IsListening) {
                     $name = [string]$body.name
                     if ([string]::IsNullOrWhiteSpace($name)) { $name = "Player$($room.nextPlayerNum)" }
                     $room.nextPlayerNum++
-                    $room.players[$playerId] = @{ name = $name; score = 0; lastSeen = (Now-Ms) }
+                    $room.players[$playerId] = @{ name = $name; score = 0; ready = $false; lastSeen = (Now-Ms) }
                     Write-JsonResponse $res @{ ok = $true; playerId = $playerId; name = $name }
                 }
             }
@@ -247,7 +262,9 @@ while ($listener.IsListening) {
                 Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
             } else {
                 $room = $rooms[$code]
-                if ([string]$body.playerId -ne $room.hostPlayerId) {
+                if (-not (Test-EveryoneReady $room) -and $room.players.Count -ge 2) {
+                    Write-JsonResponse $res @{ ok = $false; error = 'not everyone is ready' } 409
+                } elseif ([string]$body.playerId -ne $room.hostPlayerId) {
                     Write-JsonResponse $res @{ ok = $false; error = 'only host can start' } 403
                 } elseif ($room.players.Count -lt 2) {
                     Write-JsonResponse $res @{ ok = $false; error = 'need at least 2 players' } 409
@@ -264,6 +281,21 @@ while ($listener.IsListening) {
                     $room.answers = @{}
                     Write-JsonResponse $res (Room-PublicState $room)
                 }
+            }
+        }
+        elseif ($path -eq "/api/set-ready" -and $method -eq "POST") {
+            $body = Read-JsonBody $req
+            $code = [string]$body.code
+            $playerId = [string]$body.playerId
+            if (-not $rooms.ContainsKey($code)) {
+                Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
+            } elseif (-not $rooms[$code].players.ContainsKey($playerId)) {
+                Write-JsonResponse $res @{ ok = $false; error = 'not in room' } 403
+            } else {
+                $room = $rooms[$code]
+                $room.players[$playerId].ready = [bool]$body.ready
+                $room.players[$playerId].lastSeen = (Now-Ms)
+                Write-JsonResponse $res (Room-PublicState $room)
             }
         }
         elseif ($path -eq "/api/room-state" -and $method -eq "GET") {
@@ -316,6 +348,7 @@ while ($listener.IsListening) {
                     $room.answers = @{}
                     $room.lastRoundWinnerId = $null
                     foreach ($playerKey in @($room.players.Keys)) { $room.players[$playerKey].score = 0 }
+                    Clear-ReadyFlags $room   # next game needs a fresh round of ready-ups
                 }
                 Write-JsonResponse $res (Room-PublicState $room)
             }

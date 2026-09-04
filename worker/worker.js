@@ -128,6 +128,20 @@ export class RoomDO {
     }
   }
 
+  // 房主不用按準備（他按難度開始就等於準備好了），只看其他人。
+  everyoneReady() {
+    const room = this.room;
+    if (!room) return false;
+    const others = Object.keys(room.players).filter((id) => id !== room.hostPlayerId);
+    if (others.length === 0) return false;
+    return others.every((id) => room.players[id].ready);
+  }
+
+  clearReady() {
+    if (!this.room) return;
+    for (const id of Object.keys(this.room.players)) this.room.players[id].ready = false;
+  }
+
   touch(playerId) {
     if (this.room && playerId && this.room.players[playerId]) {
       this.room.players[playerId].lastSeen = this.now();
@@ -193,6 +207,7 @@ export class RoomDO {
       id,
       name: room.players[id].name,
       score: room.players[id].score,
+      ready: !!room.players[id].ready,
       answered: Object.prototype.hasOwnProperty.call(room.answers, id),
     }));
     const winnerName =
@@ -211,6 +226,7 @@ export class RoomDO {
       phaseStartedAt: room.phaseStartedAt,
       serverNow: this.now(),
       hostPlayerId: room.hostPlayerId,
+      allReady: this.everyoneReady(),
       players,
       lastRoundWinnerId: room.lastRoundWinnerId,
       lastRoundWinnerName: winnerName,
@@ -235,7 +251,7 @@ export class RoomDO {
       this.room = {
         code: body.code,
         hostPlayerId: playerId,
-        players: { [playerId]: { name, score: 0, lastSeen: this.now() } },
+        players: { [playerId]: { name, score: 0, ready: false, lastSeen: this.now() } },
         nextPlayerNum: 2,
         diffKey: null,
         songIds: [],
@@ -274,7 +290,7 @@ export class RoomDO {
       const playerId = this.newPlayerId();
       const name = (body.name && String(body.name).trim()) || "Player" + room.nextPlayerNum;
       room.nextPlayerNum++;
-      room.players[playerId] = { name, score: 0, lastSeen: this.now() };
+      room.players[playerId] = { name, score: 0, ready: false, lastSeen: this.now() };
       await this.save();
       return this.json({ ok: true, playerId, name });
     }
@@ -283,6 +299,8 @@ export class RoomDO {
       if (body.playerId !== room.hostPlayerId) return this.json({ ok: false, error: "only host can start" }, 403);
       if (Object.keys(room.players).length < 2)
         return this.json({ ok: false, error: "need at least 2 players" }, 409);
+      if (!this.everyoneReady())
+        return this.json({ ok: false, error: "not everyone is ready" }, 409);
       if (room.phase !== "lobby") {
         return this.json(this.publicState());
       }
@@ -294,6 +312,15 @@ export class RoomDO {
       room.phase = "countdown";
       room.phaseStartedAt = this.now();
       room.answers = {};
+      await this.save();
+      return this.json(this.publicState());
+    }
+
+    if (path === "/api/set-ready") {
+      const pid = body.playerId;
+      if (!room.players[pid]) return this.json({ ok: false, error: "not in room" }, 403);
+      room.players[pid].ready = !!body.ready;
+      room.players[pid].lastSeen = this.now();
       await this.save();
       return this.json(this.publicState());
     }
@@ -336,6 +363,7 @@ export class RoomDO {
       room.answers = {};
       room.lastRoundWinnerId = null;
       for (const pid of Object.keys(room.players)) room.players[pid].score = 0;
+      this.clearReady(); // 下一局要重新按準備
       await this.save();
       return this.json(this.publicState());
     }

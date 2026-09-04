@@ -279,6 +279,49 @@
     margin-left:10px;
   }
 
+  /* ---------- 目前年代 + 換年代 ---------- */
+  .era-bar{
+    display:flex; align-items:center; justify-content:center;
+    gap:10px; flex-wrap:wrap;
+    width:fit-content; max-width:100%;
+    margin:0 auto 20px;
+    padding:7px 7px 7px 20px;
+    border-radius:999px;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
+    border:1px solid rgba(255,255,255,.09);
+  }
+  .era-bar-label{ color:var(--muted); font-size:13px; }
+  .era-bar-value{
+    font-size:15px; font-weight:700;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .era-swap{
+    display:inline-flex; align-items:center; gap:7px;
+    border:none; cursor:pointer; font-family:inherit;
+    font-size:14px; font-weight:700; color:var(--text);
+    padding:10px 20px; border-radius:999px;
+    background:rgba(95,208,255,.12);
+    /* 用 inset shadow 當外框，hover 變色時不會讓按鈕尺寸跳動 */
+    box-shadow:inset 0 0 0 1.5px rgba(95,208,255,.45);
+    transition:background .18s ease, box-shadow .18s ease, transform .18s ease;
+  }
+  .era-swap:hover{
+    background:rgba(95,208,255,.22);
+    box-shadow:inset 0 0 0 1.5px var(--accent2), 0 6px 18px rgba(95,208,255,.25);
+    transform:translateY(-1px);
+  }
+  .era-swap:active{ transform:translateY(0); }
+  .era-swap-icon{
+    display:inline-block; font-size:15px;
+    transition:transform .45s cubic-bezier(.3,1.4,.5,1);
+  }
+  .era-swap:hover .era-swap-icon{ transform:rotate(180deg); }
+  /* 窄螢幕會折成兩排，這時左大右小的內距會看起來歪掉，改成對稱 */
+  @media (max-width:430px){
+    .era-bar{ padding:10px 14px; gap:8px; border-radius:22px; }
+  }
+
   /* ---------- 結果畫面 ---------- */
   .score-big{
     text-align:center;
@@ -385,10 +428,11 @@
 
   <!-- 難度選擇畫面 -->
   <section id="screen-start" class="screen">
-    <p style="text-align:center; color:var(--muted); margin:0 0 14px; font-size:13px;">
-      目前年代：<span id="era-label">-</span>
-      <button class="btn-ghost" id="change-era-btn" style="margin-left:4px; padding:3px 12px; font-size:12px;">🔄 換年代</button>
-    </p>
+    <div class="era-bar">
+      <span class="era-bar-label">目前年代</span>
+      <span class="era-bar-value" id="era-label">-</span>
+      <button class="era-swap" id="change-era-btn"><span class="era-swap-icon">🔄</span>換年代</button>
+    </div>
     <div class="diff-grid">
       <button class="diff-card diff-easy" data-diff="easy">
         <div class="name">🟢 簡單</div>

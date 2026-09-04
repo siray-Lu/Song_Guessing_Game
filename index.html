@@ -2301,6 +2301,7 @@ async function createRoom(){
     mp.code = data.code;
     mp.playerId = data.playerId;
     mp.name = data.name;
+    mpRememberPlayerId(data.code, data.playerId);
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = data.code;
     document.getElementById('mp-lobby-share').style.display = '';
@@ -2375,7 +2376,9 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   try{
     const res = await fetch(API_BASE + '/api/join-room', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ code, name })
+      // 上次在同一間房用過的身分，如果伺服器上還在就直接沿用，
+      // 免得「不小心退出後再加入」時房間裡出現兩個一樣的人
+      body: JSON.stringify({ code, name, rejoinId: mpRecallPlayerId(code) })
     });
     const data = await res.json();
     if(!data.ok){
@@ -2387,6 +2390,7 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
     mp.code = code;
     mp.playerId = data.playerId;
     mp.name = data.name;
+    mpRememberPlayerId(code, data.playerId);
     showScreen('screen-mp-lobby');
     document.getElementById('mp-lobby-code').textContent = code;
     document.getElementById('mp-lobby-share').style.display = 'none';
@@ -2399,6 +2403,19 @@ document.getElementById('mp-join-btn').addEventListener('click', async ()=>{
   }
 });
 
+/* 記住自己在某個房號用過的 playerId。
+   關掉分頁再開會是新的分頁，所以用 localStorage 而不是 sessionStorage。
+   伺服器上如果那個 id 已經不在了，會自動配一個新的，所以留著舊的沒關係。 */
+function mpRememberPlayerId(code, playerId){
+  try{ localStorage.setItem('mp-pid-' + code, playerId); }catch(e){}
+}
+function mpRecallPlayerId(code){
+  try{ return localStorage.getItem('mp-pid-' + code) || null; }catch(e){ return null; }
+}
+function mpForgetPlayerId(code){
+  try{ localStorage.removeItem('mp-pid-' + code); }catch(e){}
+}
+
 function mpLeaveRoom(){
   mpStopPolling();
   if(mp.code && mp.playerId){
@@ -2406,6 +2423,7 @@ function mpLeaveRoom(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ code: mp.code, playerId: mp.playerId })
     }).catch(()=>{});
+    mpForgetPlayerId(mp.code);
   }
   mp.code = null;
   mp.playerId = null;
@@ -2415,6 +2433,20 @@ function mpLeaveRoom(){
 }
 
 document.getElementById('mp-lobby-leave-btn').addEventListener('click', mpLeaveRoom);
+
+/* 直接關掉分頁 / 重新整理 / 按上一頁時也要告訴伺服器一聲，
+   不然那個人會一直掛在名單上，等他再進來就變成兩個。
+   這時候不能用 fetch（頁面正在關，請求會被取消），要用 sendBeacon。
+   刻意用 text/plain：sendBeacon 送 application/json 會觸發 CORS 預檢，
+   而預檢在頁面關閉時發不出去；伺服器兩邊都是直接 parse 內容，不看 Content-Type。 */
+window.addEventListener('pagehide', ()=>{
+  if(!mp.code || !mp.playerId) return;
+  const payload = JSON.stringify({ code: mp.code, playerId: mp.playerId });
+  try{
+    const blob = new Blob([payload], { type:'text/plain;charset=UTF-8' });
+    navigator.sendBeacon(API_BASE + '/api/leave-room', blob);
+  }catch(e){}
+});
 
 document.getElementById('mp-result-lobby-btn').addEventListener('click', async ()=>{
   try{ ytPlayer.pauseVideo(); }catch(err){}
@@ -2452,7 +2484,9 @@ async function mpPollTick(){
   if(!mp.code) return;
   let d;
   try{
-    const res = await fetch(`${API_BASE}/api/room-state?code=${mp.code}`);
+    // 帶上自己的 playerId，讓伺服器知道我還在（沒心跳的人會被清掉）
+    const pid = mp.playerId ? `&playerId=${encodeURIComponent(mp.playerId)}` : '';
+    const res = await fetch(`${API_BASE}/api/room-state?code=${mp.code}${pid}`);
     d = await res.json();
   }catch(err){ return; }
   if(!d.ok){

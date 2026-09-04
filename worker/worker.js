@@ -5,6 +5,10 @@
 ======================================================= */
 
 const MAX_PLAYERS = 8;
+// 超過這個時間沒有來輪詢房間狀態，就當作那個人已經離開了。
+// 抓 60 秒是因為瀏覽器把分頁切到背景時會把計時器降頻（Chrome 最慢到一分鐘一次），
+// 抓太短會把還在玩、只是切到別的分頁的人踢掉。
+const GHOST_MS = 60000;
 
 function corsHeaders() {
   return {
@@ -100,6 +104,34 @@ export class RoomDO {
 
   newPlayerId() {
     return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  }
+
+  // 把「早就離線但沒送出 leave-room」的人清掉（例如瀏覽器當掉、斷網）。
+  // 不清的話，那個人重新加入就會在名單裡出現兩次。
+  pruneGhosts() {
+    const room = this.room;
+    if (!room) return;
+    const now = this.now();
+    const ids = Object.keys(room.players);
+    if (ids.length <= 1) return; // 只剩一個人就別踢了，不然房間會直接空掉
+    let removed = false;
+    for (const id of ids) {
+      const p = room.players[id];
+      if (p.lastSeen && now - p.lastSeen > GHOST_MS) {
+        delete room.players[id];
+        delete room.answers[id];
+        removed = true;
+      }
+    }
+    if (removed && !room.players[room.hostPlayerId]) {
+      room.hostPlayerId = Object.keys(room.players)[0] || room.hostPlayerId;
+    }
+  }
+
+  touch(playerId) {
+    if (this.room && playerId && this.room.players[playerId]) {
+      this.room.players[playerId].lastSeen = this.now();
+    }
   }
 
   advancePhase() {
@@ -203,7 +235,7 @@ export class RoomDO {
       this.room = {
         code: body.code,
         hostPlayerId: playerId,
-        players: { [playerId]: { name, score: 0 } },
+        players: { [playerId]: { name, score: 0, lastSeen: this.now() } },
         nextPlayerNum: 2,
         diffKey: null,
         songIds: [],
@@ -225,13 +257,24 @@ export class RoomDO {
     const room = this.room;
 
     if (path === "/api/join-room") {
+      this.pruneGhosts();
+      // 同一個人重新連上來（重新整理、不小心關掉分頁又回來）就沿用原本的位子，
+      // 不要再開一個新的，否則名單上會出現兩個同樣的人。
+      const rejoinId = body.rejoinId && String(body.rejoinId);
+      if (rejoinId && room.players[rejoinId]) {
+        const nm = (body.name && String(body.name).trim());
+        if (nm) room.players[rejoinId].name = nm;
+        room.players[rejoinId].lastSeen = this.now();
+        await this.save();
+        return this.json({ ok: true, playerId: rejoinId, name: room.players[rejoinId].name, rejoined: true });
+      }
       if (room.phase !== "lobby") return this.json({ ok: false, error: "already started" }, 409);
       if (Object.keys(room.players).length >= MAX_PLAYERS)
         return this.json({ ok: false, error: "room full" }, 409);
       const playerId = this.newPlayerId();
       const name = (body.name && String(body.name).trim()) || "Player" + room.nextPlayerNum;
       room.nextPlayerNum++;
-      room.players[playerId] = { name, score: 0 };
+      room.players[playerId] = { name, score: 0, lastSeen: this.now() };
       await this.save();
       return this.json({ ok: true, playerId, name });
     }
@@ -256,12 +299,16 @@ export class RoomDO {
     }
 
     if (path === "/api/room-state") {
+      // 每次輪詢都當成一次「我還在」的心跳
+      this.touch(url.searchParams.get("playerId"));
+      this.pruneGhosts();
       this.advancePhase();
       await this.save();
       return this.json(this.publicState());
     }
 
     if (path === "/api/submit-answer") {
+      this.touch(body.playerId);
       this.advancePhase();
       const playerId = body.playerId;
       if (room.phase === "playing" && room.players[playerId] && !room.answers[playerId]) {
@@ -291,6 +338,8 @@ export class RoomDO {
     if (path === "/api/leave-room") {
       const playerId = body.playerId;
       if (room.players[playerId]) delete room.players[playerId];
+      // 連他這一輪的作答一起清掉，否則「是不是大家都答完了」會多算一票
+      delete room.answers[playerId];
       if (Object.keys(room.players).length === 0) {
         this.room = null;
         await this.state.storage.deleteAll();

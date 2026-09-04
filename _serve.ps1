@@ -27,6 +27,37 @@ $mime = @{ ".html"="text/html"; ".js"="application/javascript"; ".css"="text/css
 # ===================== Multiplayer room state (in-memory) =====================
 $rooms = @{}
 
+# Drop players that stopped polling. Browsers throttle timers in background tabs
+# (Chrome slows them to once a minute), so keep this generous or we kick real players.
+$GHOST_MS = 60000
+
+function Remove-GhostPlayers {
+    param($room)
+    $now = Now-Ms
+    $ids = @($room.players.Keys)
+    if ($ids.Count -le 1) { return }
+    $removed = $false
+    foreach ($id in $ids) {
+        $p = $room.players[$id]
+        if ($p.lastSeen -and (($now - $p.lastSeen) -gt $GHOST_MS)) {
+            $room.players.Remove($id)
+            if ($room.answers.ContainsKey($id)) { $room.answers.Remove($id) }
+            $removed = $true
+        }
+    }
+    if ($removed -and -not $room.players.ContainsKey($room.hostPlayerId)) {
+        $first = @($room.players.Keys)[0]
+        if ($first) { $room.hostPlayerId = $first }
+    }
+}
+
+function Touch-Player {
+    param($room, $playerId)
+    if ($playerId -and $room.players.ContainsKey($playerId)) {
+        $room.players[$playerId].lastSeen = (Now-Ms)
+    }
+}
+
 function New-RoomCode {
     do {
         $code = -join ((0..9) | Get-Random -Count 4)
@@ -163,7 +194,7 @@ while ($listener.IsListening) {
             $room = @{
                 code = $code
                 hostPlayerId = $playerId
-                players = @{ $playerId = @{ name = $name; score = 0 } }
+                players = @{ $playerId = @{ name = $name; score = 0; lastSeen = (Now-Ms) } }
                 nextPlayerNum = 2
                 diffKey = $null
                 songIds = @()
@@ -187,7 +218,15 @@ while ($listener.IsListening) {
                 Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
             } else {
                 $room = $rooms[$code]
-                if ($room.phase -ne 'lobby') {
+                Remove-GhostPlayers $room
+                $rejoinId = [string]$body.rejoinId
+                if ($rejoinId -and $room.players.ContainsKey($rejoinId)) {
+                    # Same person reconnecting - reuse their slot instead of adding a duplicate.
+                    $nm = [string]$body.name
+                    if (-not [string]::IsNullOrWhiteSpace($nm)) { $room.players[$rejoinId].name = $nm }
+                    $room.players[$rejoinId].lastSeen = (Now-Ms)
+                    Write-JsonResponse $res @{ ok = $true; playerId = $rejoinId; name = $room.players[$rejoinId].name; rejoined = $true }
+                } elseif ($room.phase -ne 'lobby') {
                     Write-JsonResponse $res @{ ok = $false; error = 'already started' } 409
                 } elseif ($room.players.Count -ge $MAX_PLAYERS) {
                     Write-JsonResponse $res @{ ok = $false; error = 'room full' } 409
@@ -196,7 +235,7 @@ while ($listener.IsListening) {
                     $name = [string]$body.name
                     if ([string]::IsNullOrWhiteSpace($name)) { $name = "Player$($room.nextPlayerNum)" }
                     $room.nextPlayerNum++
-                    $room.players[$playerId] = @{ name = $name; score = 0 }
+                    $room.players[$playerId] = @{ name = $name; score = 0; lastSeen = (Now-Ms) }
                     Write-JsonResponse $res @{ ok = $true; playerId = $playerId; name = $name }
                 }
             }
@@ -232,6 +271,9 @@ while ($listener.IsListening) {
             if (-not $rooms.ContainsKey($code)) {
                 Write-JsonResponse $res @{ ok = $false; error = 'room not found' } 404
             } else {
+                # Every poll doubles as an "I am still here" heartbeat.
+                Touch-Player $rooms[$code] ([string]$req.QueryString["playerId"])
+                Remove-GhostPlayers $rooms[$code]
                 Advance-RoomPhase $rooms[$code]
                 Write-JsonResponse $res (Room-PublicState $rooms[$code])
             }
@@ -306,6 +348,8 @@ while ($listener.IsListening) {
             if ($rooms.ContainsKey($code)) {
                 $room = $rooms[$code]
                 if ($room.players.ContainsKey($playerId)) { $room.players.Remove($playerId) }
+                # Drop their answer too, otherwise "has everyone answered" counts a ghost vote.
+                if ($room.answers.ContainsKey($playerId)) { $room.answers.Remove($playerId) }
                 if ($room.players.Count -eq 0) {
                     $rooms.Remove($code)
                 } elseif ($room.hostPlayerId -eq $playerId) {

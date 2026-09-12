@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://siray-lu.github.io/Song_Guessing_Game/sitemap.xml

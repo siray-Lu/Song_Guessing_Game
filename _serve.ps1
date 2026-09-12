@@ -23,7 +23,9 @@ if ($lanIp) {
 }
 
 $mime = @{ ".html"="text/html"; ".js"="application/javascript"; ".css"="text/css"; ".json"="application/json";
-           ".txt"="text/plain; charset=utf-8"; ".xml"="application/xml; charset=utf-8" }
+           ".txt"="text/plain; charset=utf-8"; ".xml"="application/xml; charset=utf-8";
+           ".png"="image/png"; ".jpg"="image/jpeg"; ".svg"="image/svg+xml"; ".ico"="image/x-icon";
+           ".webmanifest"="application/manifest+json" }
 
 # ===================== Multiplayer room state (in-memory) =====================
 $rooms = @{}

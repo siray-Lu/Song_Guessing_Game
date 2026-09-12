@@ -22,6 +22,15 @@
 <meta name="twitter:title" content="黑膠猜歌 — 華語老歌猜歌遊戲">
 <meta name="twitter:description" content="聽一小段就猜出歌名！699 首華語經典金曲，可以單人挑戰也能開房間跟朋友連線搶答。">
 <meta name="twitter:image" content="https://siray-lu.github.io/Song_Guessing_Game/og-image.png">
+
+<!-- 加到手機主畫面後會全螢幕開啟，看起來就像一般 App -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1030">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="黑膠猜歌">
 <style>
   :root{
     --bg1:#1a1030;
@@ -2808,6 +2817,15 @@ function mpShowFinal(d){
       <div class="mark">${p.score} 分</div>
     `;
     list.appendChild(row);
+  });
+}
+
+/* ===================== 註冊 Service Worker（PWA 安裝用） =====================
+   只在 https 或 localhost 才註冊；用 file:// 直接開檔案時 SW 不被允許，
+   會丟一個沒必要的錯誤到主控台，所以先擋掉。 */
+if('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
 </script>

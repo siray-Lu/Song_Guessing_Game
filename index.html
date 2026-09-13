@@ -104,6 +104,8 @@
   .diff-boss{ border-color:#f8717155; } .diff-boss:hover{ border-color:var(--red); }
   .diff-random{ border-color:#5fd0ff55; grid-column:1 / -1;} .diff-random:hover{ border-color:var(--accent2); }
   .badge{ font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); }
+  /* 標籤獨立成一行，手機窄螢幕時「隨機」兩個字才不會被擠到換行 */
+  .diff-card .badge-line{ margin:-2px 0 6px; }
 
   /* ---------- 遊戲畫面 ---------- */
   .hud{
@@ -475,7 +477,8 @@
         <div class="meta">8 題・每段 5 秒<br>耳力大考驗</div>
       </button>
       <button class="diff-card diff-random" data-diff="random" style="grid-column:auto;">
-        <div class="name">🔀 隨機 <span class="badge">混合三種難度</span></div>
+        <div class="name">🔀 隨機</div>
+        <div class="badge-line"><span class="badge">混合三種難度</span></div>
         <div class="meta">4~8 題隨機・每題難度也隨機（簡單/困難/魔王混戰）</div>
       </button>
     </div>
